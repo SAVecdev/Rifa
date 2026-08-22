@@ -1,0 +1,6 @@
+# Este proyecto usa Supabase como base de datos principal.
+# No es necesario levantar Redis localmente.
+
+version: '3.9'
+
+services: {}

@@ -1,0 +1,19 @@
+# Environment files and local secrets
+.env
+.env.*
+!.env.example
+
+# Dependencies and build output
+node_modules/
+client/dist/
+server/dist/
+
+# Logs and local tooling
+*.log
+npm-debug.log*
+.vscode/
+.idea/
+
+# Local application data and uploaded files
+server/data/
+server/uploads/
