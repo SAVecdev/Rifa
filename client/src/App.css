@@ -1265,25 +1265,6 @@
   font: inherit;
 }
 
-.vendor-history-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  width: 100%;
-  padding: 15px 18px;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  background: #ffffff;
-  color: #334155;
-  text-align: left;
-  cursor: pointer;
-}
-
-.vendor-history-row:hover { background: #f8fafc; }
-.vendor-history-row span:first-child { display: grid; gap: 4px; }
-.vendor-history-row small { color: #94a3b8; }
-
 .vendor-invoice-detail-modal {
   width: min(1100px, calc(100vw - 32px));
 }
@@ -1991,6 +1972,24 @@
   font-size: 0.9rem;
 }
 
+.raffles-table-thumb {
+  display: block;
+  width: 56px;
+  height: 40px;
+  border-radius: 6px;
+  object-fit: cover;
+  background: #e2e8f0;
+}
+
+.raffles-table .admin-raffle-image-placeholder {
+  width: 56px;
+  height: 40px;
+  border-radius: 6px;
+  font-size: 0.65rem;
+  text-align: center;
+  padding: 4px;
+}
+
 .admin-raffle-content {
   display: grid;
   gap: 6px;
@@ -2030,12 +2029,6 @@
 .prize-form {
   display: grid;
   gap: 14px;
-}
-
-.prize-form--editing {
-  grid-template-columns: 110px minmax(0, 1fr) 110px auto auto;
-  gap: 10px;
-  align-items: end;
 }
 
 .prize-form label {
@@ -2078,33 +2071,27 @@
   gap: 8px;
 }
 
-.prizes-list {
-  display: grid;
-  gap: 8px;
-  margin-top: 18px;
-}
-
-.prize-row {
+.prize-level-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  padding: 12px;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  background: #f8fafc;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
-.prize-row strong,
-.prize-row span {
-  display: block;
+.prize-level-row label {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  flex: 1;
 }
 
-.prize-row span {
-  margin-top: 4px;
-  color: #64748b;
-  font-size: 0.85rem;
+.prize-level-row .btn {
+  padding: 8px 10px;
+  font-size: 0.8rem;
 }
+
+
 
 .color-input-grid,
 .raffle-form-grid {
@@ -3017,7 +3004,7 @@
     grid-template-columns: 1fr;
   }
 
-  .prize-row {
+  .prize-level-row {
     align-items: stretch;
     flex-direction: column;
   }

@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import './App.css'
 import HomePage from './pages/public/HomePage'
 import VendorDashboardPage from './pages/vendor/VendorDashboardPage'
 import AdminDashboardPage from './pages/admin/AdminDashboardPage'
 import SupervisorDashboardPage from './pages/supervisor/SupervisorDashboardPage'
+import { SESSION_EXPIRED_EVENT } from './utils/apiClient'
 
 function App() {
   const [user, setUser] = useState(() => {
@@ -11,6 +12,12 @@ function App() {
     return session ? JSON.parse(session).user : null
   })
   const userRole = user?.rol
+
+  useEffect(() => {
+    const handleSessionExpired = () => setUser(null)
+    window.addEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired)
+    return () => window.removeEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired)
+  }, [])
 
   const handleLogout = async () => {
     const session = sessionStorage.getItem('rifa-session')

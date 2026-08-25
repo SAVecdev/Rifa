@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import InvoiceReceiptModal from './InvoiceReceiptModal'
+import { apiRequest as request } from '../../utils/apiClient'
 
-const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:4000'
 const presetValues = [0.25, 0.5, 1, 2, 3, 5, 10, 20]
 
 const toLocalDate = (value) => {
@@ -18,19 +18,6 @@ const formatMoney = (value) => new Intl.NumberFormat('es-CO', {
   minimumFractionDigits: 2,
   maximumFractionDigits: 2,
 }).format(Number(value || 0))
-
-const request = async (path, options = {}) => {
-  const response = await fetch(`${apiUrl}${path}`, options)
-  const responseText = await response.text()
-  let data = null
-  try {
-    data = responseText ? JSON.parse(responseText) : null
-  } catch {
-    data = null
-  }
-  if (!response.ok) throw new Error(data?.message || responseText || `Solicitud rechazada (${response.status})`)
-  return data
-}
 
 function VendorPointOfSale({ user, raffles = [], raffleTypes = [], onSaleCompleted }) {
   const [invoice, setInvoice] = useState(null)
@@ -171,22 +158,56 @@ function VendorPointOfSale({ user, raffles = [], raffleTypes = [], onSaleComplet
       setForm((currentForm) => ({ ...currentForm, number: '', quantity: '1' }))
       window.requestAnimationFrame(() => numberInputRef.current?.focus())
     } catch (requestError) {
+      if (requestError.message.startsWith('RIFA_DIFERENTE:')) {
+        const cleanMessage = requestError.message.replace('RIFA_DIFERENTE: ', '')
+        if (window.confirm(`${cleanMessage}\n\nAceptar: elimina la factura actual y abre una nueva.\nCancelar: no hace nada y mantiene la factura actual.`)) {
+          try {
+            await resetInvoiceWindow()
+          } catch (resetError) {
+            setError(resetError.message)
+            setIsSaving(false)
+          }
+        }
+        return
+      }
       setError(requestError.message)
     } finally {
       setIsSaving(false)
     }
   }
 
+  const resetInvoiceWindow = async () => {
+    setIsSaving(true)
+    setError('')
+    await request(`/api/sales/windows/${user.id}/${invoice.numero_factura}`, { method: 'DELETE' })
+    await openWindow()
+    if (selectedRaffle) {
+      const cache = await request(`/api/vendors/${user.id}/raffles/${selectedRaffle.id}/prepare-quota-cache`, { method: 'POST' })
+      setUnavailableNumbers(cache.unavailableNumbers)
+    }
+    setIsSaving(false)
+  }
+
   const handleClear = async () => {
     if (!invoice || !window.confirm('Limpiar esta venta y abrir una factura nueva?')) return
     try {
+      await resetInvoiceWindow()
+    } catch (requestError) {
+      setError(requestError.message)
+      setIsSaving(false)
+    }
+  }
+
+  const handleRemoveSale = async (sale) => {
+    if (!invoice || !window.confirm(`Eliminar el numero ${sale.numero} del carrito?`)) return
+    try {
       setIsSaving(true)
       setError('')
-      await request(`/api/sales/windows/${user.id}/${invoice.numero_factura}`, { method: 'DELETE' })
-      await openWindow()
-      if (selectedRaffle) {
-        const cache = await request(`/api/vendors/${user.id}/raffles/${selectedRaffle.id}/prepare-quota-cache`, { method: 'POST' })
-        setUnavailableNumbers(cache.unavailableNumbers)
+      const updatedInvoice = await request(`/api/sales/windows/${user.id}/${invoice.numero_factura}/items/${sale.id}`, { method: 'DELETE' })
+      setInvoice(updatedInvoice)
+      const raffleForSale = raffles.find((raffle) => raffle.id === sale.id_rifa)
+      if (raffleForSale) {
+        setUnavailableNumbers(await request(`/api/vendors/${user.id}/raffles/${raffleForSale.id}/unavailable-numbers`))
       }
     } catch (requestError) {
       setError(requestError.message)
@@ -268,10 +289,14 @@ function VendorPointOfSale({ user, raffles = [], raffleTypes = [], onSaleComplet
 
         <div className="pos-cart">
           <div className="pos-cart-toolbar"><div><span>Factura: {invoice.numero_factura}</span><strong>Total: {formatMoney(invoice.total)}</strong></div><div><button className="btn pos-pay-button" type="button" disabled={isSaving || invoice.sales.length === 0} onClick={handlePay}>Pagar</button><button className="btn pos-clear-button" type="button" disabled={isSaving} onClick={handleClear}>Limpiar</button></div></div>
-          <div className="pos-cart-table-wrap"><table className="pos-cart-table"><thead><tr><th>ID</th><th>Fecha</th><th>Numero</th><th>Cantidad</th><th>Valor</th><th>Total</th></tr></thead><tbody>{invoice.sales.map((sale) => <tr key={sale.id}><td>{sale.id}</td><td>{new Date(sale.created_at).toLocaleDateString('es-CO')}</td><td>{sale.numero}</td><td>{sale.cantidad}</td><td>{formatMoney(sale.valor)}</td><td>{formatMoney(sale.valor * sale.cantidad)}</td></tr>)}{invoice.sales.length === 0 && <tr><td colSpan="6" className="pos-cart-empty">Sin items en el carrito</td></tr>}</tbody></table></div>
+          <div className="pos-cart-table-wrap"><table className="pos-cart-table"><thead><tr><th>ID</th><th>Fecha</th><th>Tipo</th><th>Numero</th><th>Cantidad</th><th>Valor</th><th>Total</th><th aria-label="Acciones" /></tr></thead><tbody>{invoice.sales.map((sale) => {
+            const raffleForSale = raffles.find((raffle) => raffle.id === sale.id_rifa)
+            const raffleType = raffleTypes.find((type) => type.id === raffleForSale?.id_tipo)
+            return <tr key={sale.id}><td>{sale.id}</td><td>{new Date(sale.created_at).toLocaleDateString('es-CO')}</td><td>{raffleType?.nombre || 'Sin tipo'}</td><td>{sale.numero}</td><td>{sale.cantidad}</td><td>{formatMoney(sale.valor)}</td><td>{formatMoney(sale.valor * sale.cantidad)}</td><td><button className="btn btn-danger" type="button" disabled={isSaving} onClick={() => handleRemoveSale(sale)}>Eliminar</button></td></tr>
+          })}{invoice.sales.length === 0 && <tr><td colSpan="8" className="pos-cart-empty">Sin items en el carrito</td></tr>}</tbody></table></div>
         </div>
       </div>}
-      {printedInvoice && <InvoiceReceiptModal key={`${printedInvoice.id}-${invoiceSettings?.modelo_factura || 'clasica'}`} invoice={printedInvoice} settings={invoiceSettings} onClose={() => setPrintedInvoice(null)} />}
+      {printedInvoice && <InvoiceReceiptModal key={`${printedInvoice.id}-${invoiceSettings?.modelo_factura || 'clasica'}`} invoice={printedInvoice} settings={invoiceSettings} onClose={() => setPrintedInvoice(null)} isOriginal />}
     </section>
   )
 }

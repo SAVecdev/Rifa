@@ -4,8 +4,7 @@ import Sidebar from '../../components/Sidebar'
 import InvoiceReceiptModal from './InvoiceReceiptModal'
 import InvoiceDetailView from '../../components/InvoiceDetailView'
 import VendorPointOfSale from './VendorPointOfSale'
-
-const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:4000'
+import { apiRequest as request } from '../../utils/apiClient'
 
 const formatMoney = (value) => new Intl.NumberFormat('es-CO', {
   style: 'currency',
@@ -18,15 +17,9 @@ const maskInvoice = (value) => {
   const text = String(value || '')
   return text.length > 2 ? `${text.slice(0, 1)}${'*'.repeat(text.length - 2)}${text.slice(-1)}` : '**'
 }
+const isRaffleFinished = (invoice) => (invoice?.ventas || []).some((sale) => sale.rifa?.fecha_hora_juego && new Date(sale.rifa.fecha_hora_juego) <= new Date())
 
-const request = async (path, options = {}) => {
-  const response = await fetch(`${apiUrl}${path}`, options)
-  const data = await response.json()
-  if (!response.ok) throw new Error(data.message || 'No se pudo completar la solicitud')
-  return data
-}
-
-function VendorInvoiceHistory({ user }) {
+function VendorInvoiceHistory({ user, playedOnly = false }) {
   const [invoices, setInvoices] = useState([])
   const [selectedInvoice, setSelectedInvoice] = useState(null)
   const [isLoadingDetail, setIsLoadingDetail] = useState(false)
@@ -36,11 +29,14 @@ function VendorInvoiceHistory({ user }) {
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
   const [appliedSearch, setAppliedSearch] = useState('')
+  const [dateFilters, setDateFilters] = useState({ dateFrom: '', dateTo: '' })
+  const [appliedDateFilters, setAppliedDateFilters] = useState({ dateFrom: '', dateTo: '' })
   const [pagination, setPagination] = useState({ total: 0, totalPages: 0 })
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
   const listRequestRef = useRef(null)
   const detailRequestRef = useRef(null)
+  const refreshInFlightRef = useRef(false)
 
   const loadInvoices = async () => {
     const controller = new AbortController()
@@ -50,6 +46,9 @@ function VendorInvoiceHistory({ user }) {
       setIsLoading(true)
       const params = new URLSearchParams({ page: String(page), limit: '10' })
       if (appliedSearch) params.set('search', appliedSearch)
+      if (appliedDateFilters.dateFrom) params.set('dateFrom', new Date(appliedDateFilters.dateFrom).toISOString())
+      if (appliedDateFilters.dateTo) params.set('dateTo', new Date(appliedDateFilters.dateTo).toISOString())
+      params.set('playedOnly', String(playedOnly))
       const result = await request(`/api/vendors/${user.id}/invoice-history?${params}`, { signal: controller.signal })
       setInvoices(result.data || [])
       setPagination(result.pagination || { total: 0, totalPages: 0 })
@@ -60,12 +59,23 @@ function VendorInvoiceHistory({ user }) {
     }
   }
 
-  useEffect(() => { loadInvoices() }, [user.id, page, appliedSearch])
+  useEffect(() => { loadInvoices() }, [user.id, page, appliedSearch, appliedDateFilters, playedOnly])
+
+  const refreshInvoices = async () => {
+    if (refreshInFlightRef.current) return
+    refreshInFlightRef.current = true
+    try {
+      await loadInvoices()
+    } finally {
+      refreshInFlightRef.current = false
+    }
+  }
 
   const handleSearch = (event) => {
     event.preventDefault()
     setPage(1)
     setAppliedSearch(search.trim().toUpperCase())
+    setAppliedDateFilters({ ...dateFilters })
   }
 
   const openInvoice = async (invoice) => {
@@ -102,7 +112,12 @@ function VendorInvoiceHistory({ user }) {
   }
 
   const deleteInvoice = async () => {
-    if (!selectedInvoice || !window.confirm(`Eliminar factura ${selectedInvoice.numero_factura}?`)) return
+    if (!selectedInvoice) return
+    if (isRaffleFinished(selectedInvoice)) {
+      setError('La rifa de esta factura ya se jugo, no se puede eliminar')
+      return
+    }
+    if (!window.confirm(`Eliminar factura ${selectedInvoice.numero_factura}?`)) return
     try {
       await request(`/api/invoices/${selectedInvoice.id}/delete`, { method: 'POST' })
       setSelectedInvoice(null)
@@ -153,15 +168,29 @@ function VendorInvoiceHistory({ user }) {
   }
 
   return <section className="vendor-invoice-history">
-    <form className="vendor-invoice-search" onSubmit={handleSearch}><label><span>Filtrar historial de facturas</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Opcional: A001" /></label><button className="btn btn-primary" type="submit">Filtrar</button></form>
+    <form className="vendor-invoice-search" onSubmit={handleSearch}><label><span>Factura</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Opcional: A001" /></label>{playedOnly && <><label><span>Desde</span><input type="datetime-local" value={dateFilters.dateFrom} onChange={(event) => setDateFilters((current) => ({ ...current, dateFrom: event.target.value }))} /></label><label><span>Hasta</span><input type="datetime-local" value={dateFilters.dateTo} onChange={(event) => setDateFilters((current) => ({ ...current, dateTo: event.target.value }))} /></label></>}<button className="btn btn-primary" type="submit">Filtrar</button><button className="btn btn-ghost" type="button" onClick={refreshInvoices} disabled={isLoading}>Actualizar</button></form>
     {error && <p className="dashboard-message dashboard-message--error">{error}</p>}
     {isLoading && <VendorDashboardSkeleton section="history" />}
-    {!isLoading && <div className="vendor-history-list">{invoices.map((invoice) => <button type="button" className="vendor-history-row" key={invoice.id} onClick={() => openInvoice(invoice)}><span><strong>Factura {maskInvoice(invoice.numero_factura)}</strong><small>{new Date(invoice.created_at).toLocaleString('es-CO')}</small></span><span className={`user-status ${invoice.eliminada ? '' : 'user-status--active'}`}>{invoice.eliminada ? 'Eliminada' : 'Activa'}</span></button>)}{invoices.length === 0 && <p className="empty-list">No hay facturas registradas.</p>}</div>}
+    {!isLoading && <div className="users-table-wrap"><table className="users-table vendor-history-table">
+      <thead><tr><th>Factura</th><th>Rifa</th><th>Fecha</th><th>Numeros vendidos</th><th>Total</th><th>Estado</th><th aria-label="Acciones" /></tr></thead>
+      <tbody>
+        {invoices.map((invoice) => <tr key={invoice.id} className="invoice-row" onClick={() => openInvoice(invoice)}>
+          <td><strong>Factura {maskInvoice(invoice.numero_factura)}</strong></td>
+          <td>{invoice.rifa || 'Sin rifa'}</td>
+          <td>{new Date(invoice.created_at).toLocaleString('es-CO')}</td>
+          <td>{invoice.cantidad_numeros ?? 0}</td>
+          <td>{formatMoney(invoice.total)}</td>
+          <td><span className={`user-status ${invoice.eliminada ? '' : 'user-status--active'}`}>{invoice.eliminada ? 'Eliminada' : 'Activa'}</span></td>
+          <td className="user-actions"><button className="btn btn-ghost" type="button" onClick={(event) => { event.stopPropagation(); openInvoice(invoice) }}>Ver detalle</button></td>
+        </tr>)}
+        {invoices.length === 0 && <tr><td className="users-empty" colSpan="7">{playedOnly ? 'No hay ventas de rifas jugadas.' : 'No hay facturas vendidas hoy.'}</td></tr>}
+      </tbody>
+    </table></div>}
     {!isLoading && pagination.totalPages > 0 && <div className="pagination-bar"><span>Pagina {page} de {pagination.totalPages}</span><div><button className="btn btn-ghost" type="button" disabled={page === 1} onClick={() => setPage((current) => current - 1)}>Anterior</button><button className="btn btn-ghost" type="button" disabled={page >= pagination.totalPages} onClick={() => setPage((current) => current + 1)}>Siguiente</button></div></div>}
     {selectedInvoice && <div className="modal-overlay" onClick={() => setSelectedInvoice(null)}><div className="modal-card vendor-invoice-detail-modal" onClick={(event) => event.stopPropagation()}>
       <div className="modal-header"><div><p className="eyebrow">Detalle de factura buscada</p><h2>{maskInvoice(selectedInvoice.numero_factura)}</h2></div><button type="button" className="close-btn" onClick={() => setSelectedInvoice(null)} aria-label="Cerrar">×</button></div>
-      {isLoadingDetail ? <VendorDashboardSkeleton section="sales-only" /> : <InvoiceDetailView invoice={selectedInvoice} onPayNumber={payNumberPrize} onPayAll={payAllPrizes} payingId={payingId} formatMoney={formatMoney} />}
-      <div className="invoice-receipt-actions"><button className="btn btn-primary" type="button" onClick={openPrint}>Reimprimir factura</button><button className="btn btn-danger" type="button" onClick={deleteInvoice}>Eliminar factura</button><button className="btn btn-ghost" type="button" onClick={() => setSelectedInvoice(null)}>Cerrar</button></div>
+      {isLoadingDetail ? <VendorDashboardSkeleton section="sales-only" /> : <InvoiceDetailView invoice={selectedInvoice} onPayNumber={payNumberPrize} onPayAll={payAllPrizes} payingId={payingId} formatMoney={formatMoney} maskInvoiceNumber maskInvoiceId={isRaffleFinished(selectedInvoice)} />}
+      <div className="invoice-receipt-actions"><button className="btn btn-primary" type="button" onClick={openPrint}>Reimprimir factura</button><button className="btn btn-danger" type="button" disabled={isRaffleFinished(selectedInvoice)} title={isRaffleFinished(selectedInvoice) ? 'La rifa ya se jugo, no se puede eliminar la factura' : undefined} onClick={deleteInvoice}>{isRaffleFinished(selectedInvoice) && '🔒 '}Eliminar factura</button><button className="btn btn-ghost" type="button" onClick={() => setSelectedInvoice(null)}>Cerrar</button></div>
     </div></div>}
     {printInvoice && <InvoiceReceiptModal invoice={printInvoice} settings={settings} onClose={() => setPrintInvoice(null)} />}
   </section>
@@ -183,7 +212,7 @@ function VendorPrizePayments({ user }) {
       setIsLoading(true)
       setError('')
       setSearched(true)
-      const list = await request(`/api/vendors/${user.id}/invoice-history?search=${encodeURIComponent(value)}&limit=1`)
+      const list = await request(`/api/vendors/${user.id}/invoice-history?search=${encodeURIComponent(value)}&limit=1&all=true`)
       const match = (list.data || []).find((item) => item.numero_factura === value)
       if (!match) {
         setInvoiceDetail(null)
@@ -244,7 +273,10 @@ function VendorPrizePayments({ user }) {
     <form className="vendor-invoice-search" onSubmit={searchPrizes}><label><span>Buscar factura para pagar premios</span><input value={invoice} onChange={(event) => setInvoice(event.target.value)} placeholder="Ejemplo: A001" /></label><button className="btn btn-primary" type="submit" disabled={isLoading}>Buscar</button></form>
     {error && <p className="dashboard-message dashboard-message--error">{error}</p>}
     {isLoading && <VendorDashboardSkeleton section="sales-only" />}
-    {!isLoading && invoiceDetail && <InvoiceDetailView invoice={invoiceDetail} onPayNumber={payNumberPrize} onPayAll={payAllPrizes} payingId={payingId} formatMoney={formatMoney} />}
+    {!isLoading && invoiceDetail && <>
+      {!invoiceDetail.ventas?.some((sale) => Number(sale.premio_total) > 0) && <p className="dashboard-message">Esta factura no tiene premios registrados.</p>}
+      <InvoiceDetailView invoice={invoiceDetail} onPayNumber={payNumberPrize} onPayAll={payAllPrizes} payingId={payingId} formatMoney={formatMoney} />
+    </>}
     {!isLoading && !invoiceDetail && !searched && <p className="empty-list">Busca una factura para ver sus numeros y premios.</p>}
   </section>
 }
@@ -299,9 +331,7 @@ function VendorDashboardPage({ user, onLogout }) {
         if (section === 'resumen') {
           setOverview({ daily: null, recentSales: null })
           const loadPart = async (path, field) => {
-            const response = await fetch(`${apiUrl}/api/vendors/${user.id}/${path}`, { signal: controller.signal })
-            const data = await response.json()
-            if (!response.ok) throw new Error(data.message || `No se pudo cargar ${field}`)
+            const data = await request(`/api/vendors/${user.id}/${path}`, { signal: controller.signal })
             setOverview((current) => ({ ...(current || {}), [field]: data[field] }))
           }
           loadPart('dashboard-stats', 'daily').catch((requestError) => { if (requestError.name !== 'AbortError') setError(requestError.message) })
@@ -310,14 +340,10 @@ function VendorDashboardPage({ user, onLogout }) {
         }
         if (section === 'rifas' || section === 'historial-facturas' || section === 'pagar-premios') return
         const overviewPath = section === 'ventas' ? 'pos-overview' : section === 'rifas' ? 'overview' : 'dashboard-overview'
-        const overviewResponse = await fetch(`${apiUrl}/api/vendors/${user.id}/${overviewPath}`, { signal: controller.signal })
-        const data = await overviewResponse.json()
-        if (!overviewResponse.ok) throw new Error(data.message || 'No se pudo cargar la informacion del vendedor')
+        const data = await request(`/api/vendors/${user.id}/${overviewPath}`, { signal: controller.signal })
         setOverview(section === 'ventas' ? { ...data, stats: {}, sales: [] } : data)
         if (section === 'ventas') {
-          const typesResponse = await fetch(`${apiUrl}/api/raffle-types`, { signal: controller.signal })
-          const types = await typesResponse.json()
-          if (!typesResponse.ok) throw new Error(types.message || 'No se pudieron cargar los tipos de rifa')
+          const types = await request('/api/raffle-types', { signal: controller.signal })
           setRaffleTypes(types)
         }
       } catch (requestError) {
@@ -335,9 +361,13 @@ function VendorDashboardPage({ user, onLogout }) {
 
       <div className="content-wrap">
         {section === 'historial-facturas' ? <>
-          <Header title="Historial de ventas" subtitle="Facturas del vendedor" />
+          <Header title="Historial de facturas" subtitle="Facturas vendidas hoy" />
           {error && <p className="dashboard-message dashboard-message--error">{error}</p>}
           <VendorInvoiceHistory user={user} />
+        </> : section === 'historial-ventas' ? <>
+          <Header title="Historial de ventas" subtitle="Facturas de rifas ya jugadas" />
+          {error && <p className="dashboard-message dashboard-message--error">{error}</p>}
+          <VendorInvoiceHistory user={user} playedOnly />
         </> : section === 'pagar-premios' ? <>
           <Header title="Pagar premios" subtitle="Premios de facturas del vendedor" />
           <VendorPrizePayments user={user} />

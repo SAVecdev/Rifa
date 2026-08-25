@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import InvoiceDetailView from '../../components/InvoiceDetailView'
 
 const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:4000'
 
@@ -60,6 +61,7 @@ const reportEndpointByTab = {
 
 function ReportsCrm() {
   const [users, setUsers] = useState([])
+  const [raffleTypes, setRaffleTypes] = useState([])
   const [activeTab, setActiveTab] = useState('resumen')
   const [filters, setFilters] = useState({ dateFrom: toLocalDate(new Date(Date.now() - 29 * 86400000)), dateTo: toLocalDate(new Date()), userId: '' })
   const [page, setPage] = useState(1)
@@ -67,9 +69,12 @@ function ReportsCrm() {
   const [reportData, setReportData] = useState(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState('')
+  const [selectedPrizeInvoice, setSelectedPrizeInvoice] = useState(null)
+  const [isPrizeDetailLoading, setIsPrizeDetailLoading] = useState(false)
 
   useEffect(() => {
     request('/api/users').then(setUsers).catch(() => {})
+    request('/api/raffle-types').then(setRaffleTypes).catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -84,6 +89,7 @@ function ReportsCrm() {
         setError('')
         const params = new URLSearchParams({ dateFrom: filters.dateFrom, dateTo: filters.dateTo, page: String(page), limit: String(pageSize) })
         if (filters.userId) params.set('userId', filters.userId)
+        if (activeTab === 'control-premios' && filters.raffleTypeId) params.set('raffleTypeId', filters.raffleTypeId)
         const path = activeTab === 'resumen' ? '/api/admin/dashboard' : reportEndpointByTab[activeTab]
         const data = await request(`${path}?${params}`, { signal: controller.signal })
         setReportData(data)
@@ -107,6 +113,20 @@ function ReportsCrm() {
   const handleFilterChange = (event) => {
     const { name, value } = event.target
     setFilters((current) => ({ ...current, [name]: value }))
+  }
+
+  const openPrizeInvoiceDetail = async (invoiceId) => {
+    try {
+      setIsPrizeDetailLoading(true)
+      setError('')
+      const invoice = await request(`/api/invoices/${invoiceId}`)
+      const winningSales = (invoice.ventas || []).filter((sale) => Number(sale.premio_total) > 0)
+      setSelectedPrizeInvoice({ ...invoice, ventas: winningSales, total: winningSales.reduce((sum, sale) => sum + Number(sale.total || 0), 0) })
+    } catch (requestError) {
+      setError(requestError.message)
+    } finally {
+      setIsPrizeDetailLoading(false)
+    }
   }
 
   const columnsByTab = {
@@ -206,6 +226,27 @@ function ReportsCrm() {
     if (activeTab === 'control-premios') {
       const totals = reportData?.totals
       const rows = reportData?.data || []
+      const groups = Array.from(rows.reduce((map, row) => {
+        const key = row.id_factura
+        if (!map.has(key)) {
+          map.set(key, {
+            id_factura: row.id_factura,
+            numero_factura: row.factura?.numero_factura || '-',
+            vendedor: row.vendedor,
+            fecha: row.fecha,
+            count: 0,
+            total: 0,
+            pendientes: 0,
+          })
+        }
+        const group = map.get(key)
+        group.count += 1
+        group.total += Number(row.saldo_premio || 0)
+        if (!row.pagada) group.pendientes += 1
+        if (row.fecha > group.fecha) group.fecha = row.fecha
+        return map
+      }, new Map()).values())
+
       return (
         <>
           {totals && <div className="dashboard-stat-grid">
@@ -214,10 +255,20 @@ function ReportsCrm() {
             <article className="dashboard-stat dashboard-stat--yellow"><span>Total premios</span><strong>{formatMoney(totals.total)}</strong></article>
           </div>}
           <div className="invoice-detail-table-wrap"><table className="invoice-detail-table">
-            <thead><tr><th>Fecha</th><th>Vendedor</th><th>Factura</th><th>Numero</th><th>Nivel</th><th>Premio</th><th>Estado</th><th>Fecha pago</th></tr></thead>
+            <thead><tr><th>Fecha</th><th>Vendedor</th><th>Factura</th><th>Premios</th><th>Total premio</th><th>Estado</th><th aria-label="Detalle" /></tr></thead>
             <tbody>
-              {rows.map((row) => <tr key={row.id}><td>{row.fecha}</td><td>{row.vendedor}</td><td>{row.factura?.numero_factura || '-'}</td><td>{row.numerol}</td><td>{row.nivel_premio}</td><td>{formatMoney(row.saldo_premio)}</td><td><span className={`invoice-detail-badge ${row.pagada ? 'is-active' : 'is-inactive'}`}>{row.pagada ? 'Pagado' : 'Pendiente'}</span></td><td>{row.fecha_hora_pago ? new Date(row.fecha_hora_pago).toLocaleString('es-CO') : '-'}</td></tr>)}
-              {rows.length === 0 && <tr><td colSpan="8" className="invoice-detail-empty">Sin premios en este periodo.</td></tr>}
+              {groups.map((group) => (
+                <tr key={group.id_factura} className="invoice-row" onClick={() => openPrizeInvoiceDetail(group.id_factura)}>
+                  <td>{group.fecha}</td>
+                  <td>{group.vendedor}</td>
+                  <td>{group.numero_factura}</td>
+                  <td>{group.count}</td>
+                  <td>{formatMoney(group.total)}</td>
+                  <td><span className={`invoice-detail-badge ${group.pendientes === 0 ? 'is-active' : 'is-inactive'}`}>{group.pendientes === 0 ? 'Pagado' : `${group.pendientes} pendiente(s)`}</span></td>
+                  <td><span className="invoice-detail-note">Ver detalle ▾</span></td>
+                </tr>
+              ))}
+              {groups.length === 0 && <tr><td colSpan="7" className="invoice-detail-empty">Sin premios en este periodo.</td></tr>}
             </tbody>
           </table></div>
         </>
@@ -249,6 +300,7 @@ function ReportsCrm() {
           <label><span>Fecha inicio</span><input type="date" name="dateFrom" value={filters.dateFrom} onChange={handleFilterChange} /></label>
           <label><span>Fecha fin</span><input type="date" name="dateTo" value={filters.dateTo} onChange={handleFilterChange} /></label>
           <label><span>Usuario</span><select name="userId" value={filters.userId} onChange={handleFilterChange}><option value="">Todos los usuarios</option>{users.map((user) => <option key={user.id} value={user.id}>{user.nombre} ({user.rol})</option>)}</select></label>
+          {activeTab === 'control-premios' && <label><span>Tipo de rifa</span><select name="raffleTypeId" value={filters.raffleTypeId || ''} onChange={handleFilterChange}><option value="">Todos los tipos</option>{raffleTypes.map((type) => <option key={type.id} value={type.id}>{type.nombre}</option>)}</select></label>}
         </div>
         <div className="reports-preset-actions">
           <button className="btn btn-primary" type="button" onClick={() => applyPreset('7d')}>Ultimos 7 dias</button>
@@ -278,6 +330,12 @@ function ReportsCrm() {
           <button className="btn btn-ghost" type="button" disabled={page >= pagination.totalPages} onClick={() => setPage((current) => current + 1)}>Siguiente</button>
         </div>
       </div>}
+
+      {isPrizeDetailLoading && <p className="dashboard-message">Cargando detalle de la factura...</p>}
+      {selectedPrizeInvoice && <div className="modal-overlay" onClick={() => setSelectedPrizeInvoice(null)}><div className="modal-card invoice-modal-card" onClick={(event) => event.stopPropagation()}>
+        <div className="modal-header"><div><p className="eyebrow">Factura {selectedPrizeInvoice.numero_factura}</p><h2>{selectedPrizeInvoice.usuario?.nombre || 'Usuario no disponible'}</h2></div><button type="button" className="close-btn" onClick={() => setSelectedPrizeInvoice(null)} aria-label="Cerrar">×</button></div>
+        <InvoiceDetailView invoice={selectedPrizeInvoice} formatMoney={formatMoney} />
+      </div></div>}
     </section>
   )
 }

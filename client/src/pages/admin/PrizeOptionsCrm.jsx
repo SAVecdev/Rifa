@@ -5,6 +5,7 @@ const emptyForm = { id_tipo_rifa: '', id_area: '', nivel_premio: '1', saldo_gana
 const emptyFilters = { id_tipo_rifa: '', id_area: '', digitos: '', saldoMinimo: '', saldoMaximo: '' }
 const createGeneratorLevels = () => Array.from({ length: 10 }, (_, index) => ({ nivel_premio: index + 1, saldo_inicial: '', saldo_final: '', incremento: '', premio_por_incremento: '' }))
 const emptyGenerator = { id_tipo_rifa: '', id_area: '', digitos: '2', descripcion: '', levels: createGeneratorLevels() }
+const emptyBulkUpdate = { id_tipo_rifa: '', id_area: '', nivel_premio: '', digitos: '', saldoMinimo: '', saldoMaximo: '', multiplicador: '' }
 
 const request = async (path, options = {}) => {
   const response = await fetch(`${apiUrl}${path}`, options)
@@ -43,6 +44,10 @@ function PrizeOptionsCrm() {
   const [isFormOpen, setIsFormOpen] = useState(false)
   const [isGeneratorOpen, setIsGeneratorOpen] = useState(false)
   const [generator, setGenerator] = useState(emptyGenerator)
+  const [isBulkUpdateOpen, setIsBulkUpdateOpen] = useState(false)
+  const [bulkUpdate, setBulkUpdate] = useState(emptyBulkUpdate)
+  const [isGroupFormOpen, setIsGroupFormOpen] = useState(false)
+  const [groupForm, setGroupForm] = useState(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState('')
@@ -98,19 +103,68 @@ function PrizeOptionsCrm() {
     setIsFormOpen(true)
   }
 
-  const openEditForm = (option) => {
-    setEditingId(option.id)
-    setForm({
-      id_tipo_rifa: String(option.id_tipo_rifa),
-      id_area: String(option.id_area),
-      nivel_premio: String(option.nivel_premio),
-      saldo_ganado: String(option.saldo_ganado),
-      valor_premio: String(option.valor_premio),
-      digitos: String(option.digitos),
-      descripcion: option.descripcion || '',
+  const openEditGroupForm = (group) => {
+    setGroupForm({
+      id_tipo_rifa: group.id_tipo_rifa,
+      id_area: group.id_area,
+      digitos: group.digitos,
+      saldo_ganado: group.saldo_ganado,
+      levels: group.prizes.map((option, index) => ({
+        nivel_premio: index + 1,
+        id: option ? option.id : null,
+        valor_premio: option ? String(option.valor_premio) : '',
+        descripcion: option ? (option.descripcion || '') : '',
+      })),
     })
     setError('')
-    setIsFormOpen(true)
+    setIsGroupFormOpen(true)
+  }
+
+  const handleGroupLevelChange = (nivelPremio, value) => {
+    setGroupForm((currentGroupForm) => ({
+      ...currentGroupForm,
+      levels: currentGroupForm.levels.map((level) => level.nivel_premio === nivelPremio ? { ...level, valor_premio: value } : level),
+    }))
+  }
+
+  const handleGroupFormSubmit = async (event) => {
+    event.preventDefault()
+    try {
+      setIsSaving(true)
+      setError('')
+      const levelsToSave = groupForm.levels.filter((level) => level.valor_premio !== '')
+      if (levelsToSave.length === 0) throw new Error('Ingresa al menos un valor de premio')
+
+      await Promise.all(levelsToSave.map((level) => {
+        const payload = {
+          id_tipo_rifa: groupForm.id_tipo_rifa,
+          id_area: groupForm.id_area,
+          nivel_premio: level.nivel_premio,
+          saldo_ganado: groupForm.saldo_ganado,
+          valor_premio: Number(level.valor_premio),
+          digitos: groupForm.digitos,
+          descripcion: level.descripcion,
+        }
+        return level.id
+          ? request(`/api/prize-options/${level.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ valor_premio: payload.valor_premio }),
+          })
+          : request('/api/prize-options', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          })
+      }))
+      setIsGroupFormOpen(false)
+      setGroupForm(null)
+      await loadData()
+    } catch (requestError) {
+      setError(requestError.message)
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   const handleChange = (event) => {
@@ -249,6 +303,44 @@ function PrizeOptionsCrm() {
 
   const handleBulkDelete = () => deleteOptions(selectedIds)
 
+  const handleBulkUpdateChange = (event) => {
+    const { name, value } = event.target
+    setBulkUpdate((currentBulkUpdate) => ({ ...currentBulkUpdate, [name]: value }))
+  }
+
+  const handleBulkUpdateSubmit = async (event) => {
+    event.preventDefault()
+    try {
+      setIsSaving(true)
+      setError('')
+      const { id_tipo_rifa, id_area, nivel_premio, digitos, saldoMinimo, saldoMaximo, multiplicador } = bulkUpdate
+      if (!id_tipo_rifa && !id_area && !nivel_premio && !digitos) {
+        throw new Error('Selecciona al menos un filtro (tipo, area, nivel o digitos)')
+      }
+      const result = await request('/api/prize-options/bulk-update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id_tipo_rifa: id_tipo_rifa || undefined,
+          id_area: id_area || undefined,
+          nivel_premio: nivel_premio || undefined,
+          digitos: digitos || undefined,
+          saldoMinimo: saldoMinimo || undefined,
+          saldoMaximo: saldoMaximo || undefined,
+          multiplicador: Number(multiplicador),
+        }),
+      })
+      setIsBulkUpdateOpen(false)
+      setBulkUpdate(emptyBulkUpdate)
+      await loadData()
+      window.alert(`Se actualizaron ${result.updated} opcion(es) de premio.`)
+    } catch (requestError) {
+      setError(requestError.message)
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
   const toggleSelected = (id) => {
     setSelectedIds((currentIds) => currentIds.includes(id) ? currentIds.filter((currentId) => currentId !== id) : [...currentIds, id])
   }
@@ -311,7 +403,7 @@ function PrizeOptionsCrm() {
       </section>
       <div className="users-toolbar">
         <label className="user-search"><span>Buscar</span><input type="search" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1) }} placeholder="Tipo, area, nivel o descripcion" /></label>
-        <div className="prize-options-actions"><button className="btn btn-ghost" type="button" onClick={() => { setGenerator(emptyGenerator); setIsGeneratorOpen(true) }}>Generar proporcional</button><button className="btn btn-primary" type="button" onClick={openCreateForm}>Agregar opcion</button></div>
+        <div className="prize-options-actions"><button className="btn btn-ghost" type="button" onClick={() => { setGenerator(emptyGenerator); setIsGeneratorOpen(true) }}>Generar proporcional</button><button className="btn btn-ghost" type="button" onClick={() => { setBulkUpdate(emptyBulkUpdate); setIsBulkUpdateOpen(true) }}>Editar en masa</button><button className="btn btn-primary" type="button" onClick={openCreateForm}>Agregar opcion</button></div>
       </div>
       {error && <p className="dashboard-message dashboard-message--error">{error}</p>}
       {isLoading && <p className="dashboard-message">Cargando opciones de premios...</p>}
@@ -330,7 +422,7 @@ function PrizeOptionsCrm() {
             {group.prizes.map((option, index) => <td key={index} className="prize-matrix-cell">{option ? formatMoney(option.valor_premio) : '$0.00'}</td>)}
             <td>{areasById.get(group.id_area) || 'Area no disponible'}</td>
             <td>{group.digitos}D</td>
-            <td className="user-actions"><button className="btn btn-ghost" type="button" disabled={group.options.length !== 1} onClick={() => group.options.length === 1 && openEditForm(group.options[0])}>Editar</button><button className="btn btn-danger" type="button" onClick={() => deleteOptions(group.options.map((option) => option.id))}>Eliminar</button></td>
+            <td className="user-actions"><button className="btn btn-ghost" type="button" onClick={() => openEditGroupForm(group)}>Editar</button><button className="btn btn-danger" type="button" onClick={() => deleteOptions(group.options.map((option) => option.id))}>Eliminar</button></td>
           </tr>)}
           {groupedOptions.length === 0 && <tr><td className="users-empty" colSpan="15">No hay opciones de premios configuradas.</td></tr>}
         </tbody>
@@ -349,6 +441,19 @@ function PrizeOptionsCrm() {
         </form>
       </div></div>}
 
+      {isGroupFormOpen && groupForm && <div className="modal-overlay" onClick={() => setIsGroupFormOpen(false)}><div className="modal-card prize-option-form-card" onClick={(event) => event.stopPropagation()}>
+        <div className="modal-header"><div><p className="eyebrow">Opciones de premios</p><h2>Editar niveles de premio</h2></div><button type="button" className="close-btn" onClick={() => setIsGroupFormOpen(false)} aria-label="Cerrar">×</button></div>
+        <form className="login-form" onSubmit={handleGroupFormSubmit}>
+          <p className="proportional-preview">{raffleTypesById.get(groupForm.id_tipo_rifa) || 'Tipo no disponible'} · {areasById.get(groupForm.id_area) || 'Area no disponible'} · {groupForm.digitos} digitos · Apuesta {formatMoney(groupForm.saldo_ganado)}</p>
+          <div className="proportional-level-template">
+            <div className="proportional-level-header"><span>Nivel</span><span>Valor del premio</span></div>
+            {groupForm.levels.map((level) => <div key={level.nivel_premio} className="proportional-level-row"><strong>{level.nivel_premio}</strong><input type="number" min="0.01" step="0.01" value={level.valor_premio} onChange={(event) => handleGroupLevelChange(level.nivel_premio, event.target.value)} placeholder="0.00" /></div>)}
+          </div>
+          <p className="proportional-preview">Deja un nivel en blanco para omitirlo. Los niveles sin opcion existente se crearan al guardar.</p>
+          <button className="btn btn-primary btn-block" type="submit" disabled={isSaving}>{isSaving ? 'Guardando...' : 'Guardar cambios'}</button>
+        </form>
+      </div></div>}
+
       {isGeneratorOpen && <div className="modal-overlay" onClick={() => setIsGeneratorOpen(false)}><div className="modal-card prize-option-form-card" onClick={(event) => event.stopPropagation()}>
         <div className="modal-header"><div><p className="eyebrow">Generacion proporcional</p><h2>Crear opciones rapidamente</h2></div><button type="button" className="close-btn" onClick={() => setIsGeneratorOpen(false)} aria-label="Cerrar">×</button></div>
         <form className="login-form" onSubmit={handleGenerate}>
@@ -362,6 +467,19 @@ function PrizeOptionsCrm() {
           <label><span>Descripcion</span><textarea name="descripcion" value={generator.descripcion} onChange={handleGeneratorChange} rows="3" /></label>
           <p className="proportional-preview">Los niveles en blanco no se generan. Cada nivel completo crea sus opciones proporcionales.</p>
           <button className="btn btn-primary btn-block" type="submit" disabled={isSaving}>{isSaving ? 'Generando...' : 'Generar opciones'}</button>
+        </form>
+      </div></div>}
+
+      {isBulkUpdateOpen && <div className="modal-overlay" onClick={() => setIsBulkUpdateOpen(false)}><div className="modal-card prize-option-form-card" onClick={(event) => event.stopPropagation()}>
+        <div className="modal-header"><div><p className="eyebrow">Opciones de premios</p><h2>Editar en masa</h2></div><button type="button" className="close-btn" onClick={() => setIsBulkUpdateOpen(false)} aria-label="Cerrar">×</button></div>
+        <form className="login-form" onSubmit={handleBulkUpdateSubmit}>
+          <p className="proportional-preview">Recalcula el valor del premio de las opciones existentes que coincidan con los filtros: <code>valor_premio = saldo_ganado * multiplicador</code>.</p>
+          <label><span>Tipo de rifa</span><select name="id_tipo_rifa" value={bulkUpdate.id_tipo_rifa} onChange={handleBulkUpdateChange}><option value="">Todos</option>{raffleTypes.map((type) => <option key={type.id} value={type.id}>{type.nombre}</option>)}</select></label>
+          <label><span>Area</span><select name="id_area" value={bulkUpdate.id_area} onChange={handleBulkUpdateChange}><option value="">Todas</option>{areas.map((area) => <option key={area.id} value={area.id}>{area.nombre}</option>)}</select></label>
+          <div className="prize-option-grid"><label><span>Nivel</span><select name="nivel_premio" value={bulkUpdate.nivel_premio} onChange={handleBulkUpdateChange}><option value="">Todos</option>{Array.from({ length: 10 }, (_, index) => <option key={index + 1} value={index + 1}>Nivel {index + 1}</option>)}</select></label><label><span>Digitos</span><select name="digitos" value={bulkUpdate.digitos} onChange={handleBulkUpdateChange}><option value="">Todos</option>{[2, 3, 4, 5].map((digits) => <option key={digits} value={digits}>{digits} digitos</option>)}</select></label></div>
+          <div className="prize-option-grid"><label><span>Apuesta minima</span><input name="saldoMinimo" type="number" min="0" step="0.01" value={bulkUpdate.saldoMinimo} onChange={handleBulkUpdateChange} placeholder="0.25" /></label><label><span>Apuesta maxima</span><input name="saldoMaximo" type="number" min="0" step="0.01" value={bulkUpdate.saldoMaximo} onChange={handleBulkUpdateChange} placeholder="20.00" /></label></div>
+          <label><span>Multiplicador</span><input name="multiplicador" type="number" min="0.01" step="0.01" value={bulkUpdate.multiplicador} onChange={handleBulkUpdateChange} placeholder="100" required /></label>
+          <button className="btn btn-primary btn-block" type="submit" disabled={isSaving}>{isSaving ? 'Actualizando...' : 'Actualizar opciones'}</button>
         </form>
       </div></div>}
     </section>

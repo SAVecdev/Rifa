@@ -29,10 +29,10 @@ const maskValue = (value) => {
 
 const withSeparators = (items) => items.flatMap((item, index) => index === 0 ? [item] : [<hr key={`sep-${item.key}`} />, item])
 
-function InvoiceReceiptModal({ invoice, settings, onDelete, onClose }) {
+function InvoiceReceiptModal({ invoice, settings, onDelete, onClose, isOriginal = false }) {
   const [isReprinting, setIsReprinting] = useState(false)
   const config = { ...defaultSettings, ...(settings || {}) }
-  const visibleInvoiceNumber = isReprinting ? maskValue(invoice.numero_factura) : invoice.numero_factura
+  const visibleInvoiceNumber = isReprinting && !isOriginal ? maskValue(invoice.numero_factura) : invoice.numero_factura
   const visibleLevels = config.mostrar_premios ? config.orden_premios : []
   const logoUrl = invoice.logo_ruta?.startsWith('http') ? invoice.logo_ruta : invoice.logo_ruta ? `${apiUrl}${invoice.logo_ruta}` : null
   const groupedSales = invoice.ventas.reduce((groups, sale) => {
@@ -81,7 +81,7 @@ function InvoiceReceiptModal({ invoice, settings, onDelete, onClose }) {
     return () => window.removeEventListener('afterprint', handleAfterPrint)
   }, [isReprinting])
 
-  const handleReprint = () => {
+  const handlePrint = () => {
     setIsReprinting(true)
     window.setTimeout(() => window.print(), 0)
   }
@@ -98,7 +98,7 @@ function InvoiceReceiptModal({ invoice, settings, onDelete, onClose }) {
           <div className="invoice-receipt-meta"><span>Factura: {visibleInvoiceNumber}</span><span>Fecha: {new Date(invoice.created_at).toLocaleString('es-CO')}</span><span>ID: {invoice.id}</span></div>
           <span>{config.mensaje_pie}</span>
         </article>
-        <div className="invoice-receipt-actions no-print"><button className="btn btn-primary" type="button" onClick={handleReprint} disabled={isReprinting}>{isReprinting ? 'Preparando impresion...' : 'Reimprimir factura'}</button>{onDelete && <button className="btn btn-danger" type="button" onClick={onDelete}>Eliminar factura</button>}<button className="btn btn-ghost" type="button" onClick={onClose}>Cerrar</button></div>
+        <div className="invoice-receipt-actions no-print"><button className="btn btn-primary" type="button" onClick={handlePrint} disabled={isReprinting}>{isReprinting ? 'Preparando impresion...' : isOriginal ? 'Imprimir factura' : 'Reimprimir factura'}</button>{onDelete && <button className="btn btn-danger" type="button" onClick={onDelete}>Eliminar factura</button>}<button className="btn btn-ghost" type="button" onClick={onClose}>Cerrar</button></div>
       </div>
     </div>
   )

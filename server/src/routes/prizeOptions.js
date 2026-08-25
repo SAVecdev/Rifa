@@ -59,6 +59,7 @@ const getPositiveNumber = (value) => {
 const applyOptionFilters = (query, filters) => {
   if (filters.raffleTypeId) query = query.eq('id_tipo_rifa', filters.raffleTypeId)
   if (filters.areaId) query = query.eq('id_area', filters.areaId)
+  if (filters.levelId) query = query.eq('nivel_premio', filters.levelId)
   if (filters.digits) query = query.eq('digitos', filters.digits)
   if (filters.minimumBalance) query = query.gte('saldo_ganado', filters.minimumBalance)
   if (filters.maximumBalance) query = query.lte('saldo_ganado', filters.maximumBalance)
@@ -180,6 +181,47 @@ router.post('/bulk-delete', async (req, res) => {
     if (error) throw new Error(error.message)
     clearOptionsCache()
     return res.json({ ok: true, deleted: data?.length || 0 })
+  } catch (error) {
+    return res.status(400).json({ message: error.message })
+  }
+})
+
+router.post('/bulk-update', async (req, res) => {
+  try {
+    const { id_tipo_rifa, id_area, nivel_premio, digitos, saldoMinimo, saldoMaximo, multiplicador } = req.body || {}
+    const factor = Number(multiplicador)
+    if (!Number.isFinite(factor) || factor <= 0) throw new Error('multiplicador debe ser un numero mayor a cero')
+
+    const filters = {
+      raffleTypeId: getPositiveNumber(id_tipo_rifa),
+      areaId: getPositiveNumber(id_area),
+      levelId: getPositiveNumber(nivel_premio),
+      digits: getPositiveNumber(digitos),
+      minimumBalance: getPositiveNumber(saldoMinimo),
+      maximumBalance: getPositiveNumber(saldoMaximo),
+    }
+    if (!filters.raffleTypeId && !filters.areaId && !filters.levelId && !filters.digits) {
+      throw new Error('Selecciona al menos un filtro (tipo, area, nivel o digitos) para la actualizacion masiva')
+    }
+
+    const supabase = ensureSupabaseConfigured()
+    const { data: matches, error: fetchError } = await applyOptionFilters(
+      supabase.from('opciones_premios').select('id, saldo_ganado'),
+      filters,
+    )
+    if (fetchError) throw new Error(fetchError.message)
+    if (!matches || matches.length === 0) return res.json({ ok: true, updated: 0 })
+
+    const results = await Promise.all(matches.map((row) => supabase
+      .from('opciones_premios')
+      .update({ valor_premio: Number((Number(row.saldo_ganado) * factor).toFixed(2)) })
+      .eq('id', row.id)))
+
+    const failed = results.find((result) => result.error)
+    if (failed) throw new Error(failed.error.message)
+
+    clearOptionsCache()
+    return res.json({ ok: true, updated: matches.length })
   } catch (error) {
     return res.status(400).json({ message: error.message })
   }

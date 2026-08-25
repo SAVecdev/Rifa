@@ -3,8 +3,11 @@ import { ensureSupabaseConfigured } from '../config/supabase.js'
 import { getCachedUnavailableNumbers, getUnavailableNumbers, initializeRaffleQuotaCache } from '../services/localSaleService.js'
 import { getWinnerCache, refreshWinnerCache } from '../services/winnerCache.js'
 import { adjuntarEstadoPremios, marcarVentasComoPagadas } from '../services/invoicePrizeStatus.js'
+import { requireSessionOwner } from '../middleware/requireSession.js'
 
 const router = express.Router()
+router.use('/:userId', requireSessionOwner((req) => req.params.userId))
+
 const vendorStatsCache = new Map()
 const vendorHistoryCache = new Map()
 const vendorStatsLoading = new Map()
@@ -114,7 +117,14 @@ router.get('/:userId/invoice-history', async (req, res) => {
     const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1)
     const limit = Math.min(50, Math.max(1, Number.parseInt(req.query.limit, 10) || 10))
     const search = String(req.query.search || '').trim().toUpperCase()
-    const cacheKey = `${userId}:${page}:${limit}:${search}`
+    const playedOnly = req.query.playedOnly === 'true'
+    const allInvoices = req.query.all === 'true'
+    const today = new Date()
+    const defaultDateFrom = new Date(today.getFullYear(), today.getMonth(), today.getDate()).toISOString()
+    const defaultDateTo = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 23, 59, 59, 999).toISOString()
+    const dateFrom = req.query.dateFrom && !Number.isNaN(new Date(req.query.dateFrom).getTime()) ? new Date(req.query.dateFrom).toISOString() : (playedOnly || allInvoices ? null : defaultDateFrom)
+    const dateTo = req.query.dateTo && !Number.isNaN(new Date(req.query.dateTo).getTime()) ? new Date(req.query.dateTo).toISOString() : (playedOnly || allInvoices ? null : defaultDateTo)
+    const cacheKey = `${userId}:${page}:${limit}:${search}:${playedOnly}:${allInvoices}:${dateFrom || ''}:${dateTo || ''}`
     const cached = vendorHistoryCache.get(cacheKey)
     if (cached && cached.expiresAt > Date.now()) return res.json(cached.data)
     if (vendorHistoryLoading.has(cacheKey)) return res.json(await vendorHistoryLoading.get(cacheKey))
@@ -122,17 +132,58 @@ router.get('/:userId/invoice-history', async (req, res) => {
     const supabase = ensureSupabaseConfigured()
     const query = (async () => {
       const startedAt = Date.now()
-      const { data, error } = await supabase
+      let invoiceQuery = supabase
         .from('factura')
         .select('id, numero_factura, created_at, eliminada')
         .eq('id_usuario', userId)
         .ilike('numero_factura', search ? `%${search}%` : '%')
-        .order('created_at', { ascending: false })
-        .range((page - 1) * limit, page * limit + 1)
+      if (dateFrom) invoiceQuery = invoiceQuery.gte('created_at', dateFrom)
+      if (dateTo) invoiceQuery = invoiceQuery.lte('created_at', dateTo)
+      invoiceQuery = invoiceQuery.order('created_at', { ascending: false }).range((page - 1) * limit, page * limit + 1)
+      const { data, error } = await invoiceQuery
       if (error) throw new Error(error.message)
       const rows = data || []
       const hasNext = rows.length > limit
-      const result = { data: rows.slice(0, limit), pagination: { page, limit, total: null, totalPages: hasNext ? page + 1 : page, hasNext } }
+      const pageRows = rows.slice(0, limit)
+
+      const invoiceIds = pageRows.map((row) => row.id)
+      const totalsByInvoice = new Map()
+      if (invoiceIds.length > 0) {
+        const { data: salesData, error: salesError } = await supabase
+          .from('venta')
+          .select('id_factura, id_rifa, cantidad, total')
+          .in('id_factura', invoiceIds)
+          .eq('eliminada', false)
+        if (salesError) throw new Error(salesError.message)
+        const raffleIds = [...new Set((salesData || []).map((sale) => sale.id_rifa).filter(Boolean))]
+        const rafflesById = new Map()
+        if (raffleIds.length > 0) {
+          const { data: raffleData, error: raffleError } = await supabase
+            .from('rifa')
+            .select('id, nombre, fecha_hora_juego')
+            .in('id', raffleIds)
+          if (raffleError) throw new Error(raffleError.message)
+          for (const raffle of raffleData || []) rafflesById.set(raffle.id, raffle)
+        }
+        for (const sale of salesData || []) {
+          const current = totalsByInvoice.get(sale.id_factura) || { cantidad_numeros: 0, total: 0, rifas: [], raffleDates: [] }
+          current.cantidad_numeros += Number(sale.cantidad || 0)
+          current.total += Number(sale.total || 0)
+          const raffle = rafflesById.get(sale.id_rifa)
+          if (raffle?.nombre && !current.rifas.includes(raffle.nombre)) current.rifas.push(raffle.nombre)
+          if (raffle?.fecha_hora_juego && !current.raffleDates.includes(raffle.fecha_hora_juego)) current.raffleDates.push(raffle.fecha_hora_juego)
+          totalsByInvoice.set(sale.id_factura, current)
+        }
+      }
+
+      const enrichedRows = pageRows.map((row) => ({
+        ...row,
+        cantidad_numeros: totalsByInvoice.get(row.id)?.cantidad_numeros || 0,
+        total: totalsByInvoice.get(row.id)?.total || 0,
+        rifa: totalsByInvoice.get(row.id)?.rifas?.join(', ') || 'Sin rifa',
+        rifa_fecha_hora_juego: totalsByInvoice.get(row.id)?.raffleDates?.[0] || null,
+      })).filter((row) => !playedOnly || (row.rifa_fecha_hora_juego && new Date(row.rifa_fecha_hora_juego) <= new Date()))
+      const result = { data: enrichedRows, pagination: { page, limit, total: null, totalPages: hasNext ? page + 1 : page, hasNext } }
       console.log(`[VENDOR-HISTORY] Supabase ${Date.now() - startedAt}ms - ${result.data.length} facturas`)
       vendorHistoryCache.set(cacheKey, { data: result, expiresAt: Date.now() + vendorCacheTtl })
       return result
@@ -255,7 +306,7 @@ router.get('/:userId/pos-overview', async (req, res) => {
   }
 })
 
-router.get('/:userId/overview', async (req, res) => {
+const getVendorOverview = async (req, res) => {
   try {
     const userId = Number(req.params.userId)
     if (!Number.isInteger(userId) || userId < 1) {
@@ -314,7 +365,10 @@ router.get('/:userId/overview', async (req, res) => {
   } catch (error) {
     return res.status(500).json({ message: error.message })
   }
-})
+}
+
+router.get('/:userId/overview', getVendorOverview)
+router.get('/:userId/dashboard-overview', getVendorOverview)
 
 router.post('/:userId/raffles/:raffleId/prepare-quota-cache', async (req, res) => {
   try {

@@ -8,9 +8,11 @@ import {
   getCachedRaffleGameTimes,
   openSaleWindow,
   releaseExpiredPendingSales,
+  removePendingSale,
   restorePendingInvoice,
 } from '../services/localSaleService.js'
 import { refreshWinnerCache } from '../services/winnerCache.js'
+import { requireSessionOwner } from '../middleware/requireSession.js'
 
 const router = express.Router()
 
@@ -32,7 +34,7 @@ const callRpcWithRetry = async (supabase, payload, requestLabel) => {
   return { data: null, error: lastError }
 }
 
-router.post('/windows', (req, res) => {
+router.post('/windows', ...requireSessionOwner((req) => req.body?.id_usuario ?? req.body?.userId), (req, res) => {
   try {
     const invoice = openSaleWindow(req.body?.id_usuario ?? req.body?.userId)
     return res.status(201).json(invoice)
@@ -41,7 +43,7 @@ router.post('/windows', (req, res) => {
   }
 })
 
-router.get('/windows/:userId/:invoiceNumber', (req, res) => {
+router.get('/windows/:userId/:invoiceNumber', ...requireSessionOwner((req) => req.params.userId), (req, res) => {
   try {
     return res.json(getPendingInvoice(req.params.userId, req.params.invoiceNumber))
   } catch (error) {
@@ -49,7 +51,7 @@ router.get('/windows/:userId/:invoiceNumber', (req, res) => {
   }
 })
 
-router.delete('/windows/:userId/:invoiceNumber', (req, res) => {
+router.delete('/windows/:userId/:invoiceNumber', ...requireSessionOwner((req) => req.params.userId), (req, res) => {
   try {
     closeSaleWindow(req.params.userId, req.params.invoiceNumber)
     return res.json({ ok: true, message: 'Factura pendiente cerrada y ventas eliminadas' })
@@ -58,7 +60,16 @@ router.delete('/windows/:userId/:invoiceNumber', (req, res) => {
   }
 })
 
-router.post('/windows/:userId/:invoiceNumber/pay', async (req, res) => {
+router.delete('/windows/:userId/:invoiceNumber/items/:saleId', ...requireSessionOwner((req) => req.params.userId), (req, res) => {
+  try {
+    const invoice = removePendingSale(req.params.userId, req.params.invoiceNumber, req.params.saleId)
+    return res.json(invoice)
+  } catch (error) {
+    return res.status(400).json({ message: error.message })
+  }
+})
+
+router.post('/windows/:userId/:invoiceNumber/pay', ...requireSessionOwner((req) => req.params.userId), async (req, res) => {
   let invoice
   let paymentStarted = false
 

@@ -19,6 +19,8 @@ function RaffleCrm() {
   const [types, setTypes] = useState([])
   const [images, setImages] = useState([])
   const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(10)
   const [form, setForm] = useState(emptyForm)
   const [editingId, setEditingId] = useState(null)
   const [isFormOpen, setIsFormOpen] = useState(false)
@@ -102,30 +104,37 @@ function RaffleCrm() {
   const typeById = new Map(types.map((type) => [type.id, type]))
   const imageById = new Map(images.map((image) => [image.id, image]))
   const filteredRaffles = raffles.filter((raffle) => raffle.nombre?.toLowerCase().includes(search.trim().toLowerCase()))
+  const totalPages = Math.max(1, Math.ceil(filteredRaffles.length / pageSize))
+  const currentPage = Math.min(page, totalPages)
+  const pageRaffles = filteredRaffles.slice((currentPage - 1) * pageSize, currentPage * pageSize)
 
   return (
     <section className="raffles-crm">
-      <div className="users-toolbar"><label className="user-search"><span>Buscar</span><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Nombre de rifa" /></label><button className="btn btn-primary" type="button" onClick={openCreateForm}>Agregar rifa</button></div>
+      <div className="users-toolbar"><label className="user-search"><span>Buscar</span><input type="search" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1) }} placeholder="Nombre de rifa" /></label><button className="btn btn-primary" type="button" onClick={openCreateForm}>Agregar rifa</button></div>
       {error && <p className="dashboard-message dashboard-message--error">{error}</p>}
       {isLoading && <p className="dashboard-message">Cargando rifas...</p>}
-      {!isLoading && <div className="raffles-grid">
-        {filteredRaffles.map((raffle) => {
-          const type = typeById.get(raffle.id_tipo)
-          const image = imageById.get(raffle.id_imagen)
-          return <article key={raffle.id} className="admin-raffle-card">
-            {image ? <img src={imageUrl(image.ruta)} alt={raffle.nombre} /> : <div className="admin-raffle-image-placeholder">Sin imagen</div>}
-            <div className="admin-raffle-content">
-              <strong>{raffle.nombre}</strong>
-              <span>{raffle.sorteos} sorteo{raffle.sorteos === 1 ? '' : 's'}</span>
-              <span>{type?.nombre || 'Sin tipo'}</span>
-              <time dateTime={raffle.fecha_hora_juego}>{new Date(raffle.fecha_hora_juego).toLocaleString('es-CO')}</time>
-              <span>{raffle.fecha_hora_finalizacion ? `Finalizada: ${new Date(raffle.fecha_hora_finalizacion).toLocaleString('es-CO')}` : 'Sin finalizar'}</span>
-            </div>
-            <div className="image-library-actions"><button className="btn btn-ghost" type="button" onClick={() => setSelectedRaffleForPrizes(raffle)}>Premios</button><button className="btn btn-ghost" type="button" onClick={() => openEditForm(raffle)}>Editar</button><button className="btn btn-danger" type="button" onClick={() => handleDelete(raffle)}>Eliminar</button></div>
-          </article>
-        })}
-        {filteredRaffles.length === 0 && <p className="empty-list">No hay rifas registradas.</p>}
-      </div>}
+      {!isLoading && <div className="prize-options-table-toolbar"><span>{filteredRaffles.length} resultado(s)</span><label>Filas por pagina <select value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); setPage(1) }}><option value="10">10</option><option value="25">25</option><option value="50">50</option></select></label></div>}
+      {!isLoading && <div className="users-table-wrap"><table className="users-table raffles-table">
+        <thead><tr><th>Imagen</th><th>Nombre</th><th>Sorteos</th><th>Tipo</th><th>Fecha del sorteo</th><th>Finalizacion</th><th aria-label="Acciones" /></tr></thead>
+        <tbody>
+          {pageRaffles.map((raffle) => {
+            const type = typeById.get(raffle.id_tipo)
+            const image = imageById.get(raffle.id_imagen)
+            return <tr key={raffle.id}>
+              <td>{image ? <img className="raffles-table-thumb" src={imageUrl(image.ruta)} alt={raffle.nombre} /> : <span className="admin-raffle-image-placeholder">Sin imagen</span>}</td>
+              <td><strong>{raffle.nombre}</strong></td>
+              <td>{raffle.sorteos} sorteo{raffle.sorteos === 1 ? '' : 's'}</td>
+              <td>{type?.nombre || 'Sin tipo'}</td>
+              <td>{new Date(raffle.fecha_hora_juego).toLocaleString('es-CO')}</td>
+              <td>{raffle.fecha_hora_finalizacion ? new Date(raffle.fecha_hora_finalizacion).toLocaleString('es-CO') : 'Sin finalizar'}</td>
+              <td className="user-actions"><button className="btn btn-ghost" type="button" onClick={() => setSelectedRaffleForPrizes(raffle)}>Premios</button><button className="btn btn-ghost" type="button" onClick={() => openEditForm(raffle)}>Editar</button><button className="btn btn-danger" type="button" onClick={() => handleDelete(raffle)}>Eliminar</button></td>
+            </tr>
+          })}
+          {pageRaffles.length === 0 && <tr><td className="users-empty" colSpan="7">No hay rifas registradas.</td></tr>}
+        </tbody>
+      </table></div>}
+      {!isLoading && filteredRaffles.length > 0 && <div className="pagination-bar"><span>Pagina {currentPage} de {totalPages}</span><div><button className="btn btn-ghost" type="button" disabled={currentPage === 1} onClick={() => setPage((current) => Math.max(1, current - 1))}>Anterior</button><button className="btn btn-ghost" type="button" disabled={currentPage === totalPages} onClick={() => setPage((current) => Math.min(totalPages, current + 1))}>Siguiente</button></div></div>}
+
 
       {isFormOpen && <div className="modal-overlay" onClick={() => setIsFormOpen(false)}><div className="modal-card raffle-form-card" onClick={(event) => event.stopPropagation()}>
         <div className="modal-header"><div><p className="eyebrow">Rifas</p><h2>{editingId ? 'Editar rifa' : 'Agregar rifa'}</h2></div><button type="button" className="close-btn" onClick={() => setIsFormOpen(false)} aria-label="Cerrar">×</button></div>

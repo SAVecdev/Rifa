@@ -19,6 +19,7 @@ const parseFilters = (query) => {
     from: isDate(query.dateFrom) ? query.dateFrom : defaults.from,
     to: isDate(query.dateTo) ? query.dateTo : defaults.to,
     userId: Number.isInteger(Number(query.userId)) && Number(query.userId) > 0 ? Number(query.userId) : null,
+    raffleTypeId: Number.isInteger(Number(query.raffleTypeId)) && Number(query.raffleTypeId) > 0 ? Number(query.raffleTypeId) : null,
   }
 }
 
@@ -76,8 +77,21 @@ router.get('/ventas', async (req, res) => {
 router.get('/premios', async (req, res) => {
   try {
     const supabase = ensureSupabaseConfigured()
-    const { from, to, userId } = parseFilters(req.query)
+    const { from, to, userId, raffleTypeId } = parseFilters(req.query)
     const pagination = parsePagination(req.query)
+
+    let winnerIds = null
+    if (raffleTypeId) {
+      const { data: raffles, error: rafflesError } = await supabase.from('rifa').select('id').eq('id_tipo', raffleTypeId)
+      if (rafflesError) throw new Error(rafflesError.message)
+      const raffleIds = (raffles || []).map((raffle) => raffle.id)
+      if (raffleIds.length === 0) winnerIds = []
+      else {
+        const { data: winningNumbers, error: winningNumbersError } = await supabase.from('numero_ganadores').select('id').in('id_rifa', raffleIds)
+        if (winningNumbersError) throw new Error(winningNumbersError.message)
+        winnerIds = (winningNumbers || []).map((winningNumber) => winningNumber.id)
+      }
+    }
 
     let query = supabase
       .from('ganadores')
@@ -87,9 +101,11 @@ router.get('/premios', async (req, res) => {
       .order('fecha', { ascending: false })
     query = applyRange(query, pagination)
     if (userId) query = query.eq('id_usuario', userId)
+    if (winnerIds) query = winnerIds.length > 0 ? query.in('id_numero_ganador', winnerIds) : query.eq('id_numero_ganador', -1)
 
     let totalsQuery = supabase.from('ganadores').select('saldo_premio, pagada').gte('fecha', from).lte('fecha', to)
     if (userId) totalsQuery = totalsQuery.eq('id_usuario', userId)
+    if (winnerIds) totalsQuery = winnerIds.length > 0 ? totalsQuery.in('id_numero_ganador', winnerIds) : totalsQuery.eq('id_numero_ganador', -1)
 
     const [{ data, error, count }, { data: totalsData, error: totalsError }] = await Promise.all([query, totalsQuery])
     if (error) throw new Error(error.message)

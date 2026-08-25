@@ -4,6 +4,7 @@ const menuByRole = {
   vendedor: [
     { label: 'Resumen', icon: '◫', id: 'resumen' },
     { label: 'Historial de facturas', icon: '▤', id: 'historial-facturas' },
+    { label: 'Historial de ventas', icon: '▤', id: 'historial-ventas' },
     { label: 'Pagar premios', icon: '✦', id: 'pagar-premios' },
     { label: 'Ventas', icon: '◌', id: 'ventas' },
   ],

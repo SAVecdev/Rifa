@@ -1,6 +1,7 @@
 import express from 'express'
 import { createRaffle, createSale, deleteRaffle, getRaffleById, getRaffles, updateRaffle } from '../services/raffleService.js'
 import { ensureSupabaseConfigured } from '../config/supabase.js'
+import { requireSessionOwner } from '../middleware/requireSession.js'
 
 const router = express.Router()
 
@@ -74,7 +75,7 @@ router.delete('/:id', async (req, res) => {
   }
 })
 
-router.post('/:id/sales', async (req, res) => {
+router.post('/:id/sales', ...requireSessionOwner((req) => req.body.id_usuario ?? req.body.userId), async (req, res) => {
   try {
     const sale = await createSale({
       raffleId: req.params.id,

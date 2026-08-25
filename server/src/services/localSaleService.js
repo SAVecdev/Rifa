@@ -301,6 +301,11 @@ export const addPendingSales = ({ userId, raffleId, invoiceNumber, numbers, valu
   const window = getWindow(normalizedUserId, normalizedInvoiceNumber)
   if (window.estado !== 'abierta') throw new Error('La factura se esta procesando')
 
+  const existingSale = database.prepare('SELECT id_rifa FROM venta_pendiente WHERE id_ventana = ? LIMIT 1').get(window.id)
+  if (existingSale && existingSale.id_rifa !== normalizedRaffleId) {
+    throw new Error('RIFA_DIFERENTE: Esta factura ya tiene numeros de otra rifa. No se pueden mezclar rifas distintas en la misma factura.')
+  }
+
   const raffleCache = database.prepare('SELECT fecha_hora_juego FROM rifa_cupo_cache WHERE id_rifa = ?').get(normalizedRaffleId)
   if (!raffleCache) throw new Error('Primero prepara los cupos locales de esta rifa')
   if (raffleCache.fecha_hora_juego && raffleCache.fecha_hora_juego <= new Date().toISOString()) {
@@ -394,6 +399,30 @@ export const closeSaleWindow = (userId, invoiceNumber) => {
     database.prepare('DELETE FROM venta_pendiente WHERE id_ventana = ?').run(invoice.id)
     database.prepare('DELETE FROM factura_pendiente WHERE id = ?').run(invoice.id)
   })()
+}
+
+export const removePendingSale = (userId, invoiceNumber, saleId) => {
+  const normalizedUserId = normalizeUserId(userId)
+  const normalizedInvoiceNumber = normalizeInvoiceNumber(invoiceNumber)
+  const normalizedSaleId = Number(saleId)
+  if (!Number.isInteger(normalizedSaleId) || normalizedSaleId < 1) throw new Error('El id de la venta es invalido')
+
+  const window = getWindow(normalizedUserId, normalizedInvoiceNumber)
+  if (window.estado !== 'abierta') throw new Error('La factura se esta procesando')
+
+  const sale = database.prepare('SELECT * FROM venta_pendiente WHERE id = ? AND id_ventana = ?').get(normalizedSaleId, window.id)
+  if (!sale) throw new Error('La venta no existe en esta factura')
+
+  database.transaction(() => {
+    database.prepare(`
+      UPDATE cupo_numero_local
+      SET monto_pendiente = MAX(0, monto_pendiente - ?)
+      WHERE id_rifa = ? AND numero = ?
+    `).run(sale.valor * sale.cantidad, sale.id_rifa, sale.numero)
+    database.prepare('DELETE FROM venta_pendiente WHERE id = ?').run(normalizedSaleId)
+  })()
+
+  return getPendingInvoice(normalizedUserId, normalizedInvoiceNumber)
 }
 
 setInterval(cleanupExpiredWindows, 60 * 1000).unref()
