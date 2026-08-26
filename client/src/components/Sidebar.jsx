@@ -13,6 +13,7 @@ const menuByRole = {
     { label: 'Usuarios', icon: '◎', id: 'usuarios' },
     { label: 'Imagenes', icon: '◌', id: 'imagenes' },
     { label: 'Areas', icon: '◍', id: 'areas' },
+    { label: 'Horarios de venta', icon: '🕒', id: 'horarios-venta' },
     { label: 'Supervisores', icon: '◈', id: 'supervisores' },
     { label: 'Tipos de rifa', icon: '▣', id: 'tipos-rifa' },
     { label: 'Rifas', icon: '◎', id: 'rifas' },

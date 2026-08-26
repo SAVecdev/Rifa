@@ -29,12 +29,21 @@ router.get('/', async (req, res) => {
 
 router.post('/', async (req, res) => {
   try {
-    const { nombre, descripcion } = req.body || {}
+    const { nombre, descripcion, hora_inicio_venta, hora_fin_venta, horario_activo } = req.body || {}
     const supabase = ensureSupabaseConfigured()
+
+    const payload = {
+      nombre,
+      descripcion,
+      activo: true,
+      hora_inicio_venta: hora_inicio_venta || '07:00:00',
+      hora_fin_venta: hora_fin_venta || '17:00:00',
+      horario_activo: Boolean(horario_activo),
+    }
 
     const { data, error } = await supabase
       .from('area')
-      .insert({ nombre, descripcion, activo: true })
+      .insert(payload)
       .select()
       .single()
 
@@ -48,12 +57,16 @@ router.post('/', async (req, res) => {
 
 router.patch('/:id', async (req, res) => {
   try {
-    const { nombre, descripcion, activo } = req.body || {}
+    const { nombre, descripcion, activo, hora_inicio_venta, hora_fin_venta, horario_activo } = req.body || {}
     const payload = {}
 
     if (nombre !== undefined) payload.nombre = nombre
     if (descripcion !== undefined) payload.descripcion = descripcion
     if (activo !== undefined) payload.activo = activo
+    if (hora_inicio_venta !== undefined) payload.hora_inicio_venta = hora_inicio_venta
+    if (hora_fin_venta !== undefined) payload.hora_fin_venta = hora_fin_venta
+    if (horario_activo !== undefined) payload.horario_activo = Boolean(horario_activo)
+
     if (Object.keys(payload).length === 0) {
       return res.status(400).json({ message: 'Envia al menos un campo para actualizar' })
     }

@@ -32,7 +32,7 @@ const withSeparators = (items) => items.flatMap((item, index) => index === 0 ? [
 function InvoiceReceiptModal({ invoice, settings, onDelete, onClose, isOriginal = false }) {
   const [isReprinting, setIsReprinting] = useState(false)
   const config = { ...defaultSettings, ...(settings || {}) }
-  const visibleInvoiceNumber = isReprinting && !isOriginal ? maskValue(invoice.numero_factura) : invoice.numero_factura
+  const visibleInvoiceNumber = !isOriginal ? maskValue(invoice.numero_factura) : invoice.numero_factura
   const visibleLevels = config.mostrar_premios ? config.orden_premios : []
   const logoUrl = invoice.logo_ruta?.startsWith('http') ? invoice.logo_ruta : invoice.logo_ruta ? `${apiUrl}${invoice.logo_ruta}` : null
   const groupedSales = invoice.ventas.reduce((groups, sale) => {
@@ -89,7 +89,7 @@ function InvoiceReceiptModal({ invoice, settings, onDelete, onClose, isOriginal 
   return (
     <div className="modal-overlay invoice-receipt-overlay" onClick={onClose}>
       <div className="modal-card invoice-receipt-modal" role="dialog" aria-modal="true" aria-label="Factura" onClick={(event) => event.stopPropagation()}>
-        <div className="modal-header no-print"><div><p className="eyebrow">Factura confirmada · Modelo {config.modelo_factura}</p><h2>{invoice.numero_factura}</h2></div><button type="button" className="close-btn" onClick={onClose} aria-label="Cerrar">×</button></div>
+        <div className="modal-header no-print"><div><p className="eyebrow">{isOriginal ? 'Factura confirmada' : 'Reimpresion de factura (Censurada)'} · Modelo {config.modelo_factura}</p><h2>{visibleInvoiceNumber}</h2></div><button type="button" className="close-btn" onClick={onClose} aria-label="Cerrar">×</button></div>
         <article className="invoice-receipt" style={{ fontFamily: config.tipo_letra, fontSize: `${config.tamano_letra}px`, color: config.color_primario, backgroundColor: config.color_secundario }}>
           {header}
           <div className={`invoice-model invoice-model--${config.modelo_factura}`}>{content}</div>

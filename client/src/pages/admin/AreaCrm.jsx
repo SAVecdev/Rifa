@@ -2,7 +2,14 @@ import { useEffect, useState } from 'react'
 
 const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:4000'
 
-const emptyForm = { nombre: '', descripcion: '', activo: true }
+const emptyForm = {
+  nombre: '',
+  descripcion: '',
+  activo: true,
+  hora_inicio_venta: '07:00',
+  hora_fin_venta: '17:00',
+  horario_activo: false,
+}
 
 const request = async (path, options = {}) => {
   const response = await fetch(`${apiUrl}${path}`, options)
@@ -50,6 +57,9 @@ function AreaCrm() {
       nombre: area.nombre || '',
       descripcion: area.descripcion || '',
       activo: Boolean(area.activo),
+      hora_inicio_venta: area.hora_inicio_venta ? String(area.hora_inicio_venta).slice(0, 5) : '07:00',
+      hora_fin_venta: area.hora_fin_venta ? String(area.hora_fin_venta).slice(0, 5) : '17:00',
+      horario_activo: Boolean(area.horario_activo),
     })
     setError('')
     setIsFormOpen(true)
@@ -114,13 +124,22 @@ function AreaCrm() {
         <div className="users-table-wrap">
           <table className="users-table">
             <thead>
-              <tr><th>Area</th><th>Descripcion</th><th>Estado</th><th aria-label="Acciones" /></tr>
+              <tr><th>Area</th><th>Descripcion</th><th>Horario Venta</th><th>Estado</th><th aria-label="Acciones" /></tr>
             </thead>
             <tbody>
               {filteredAreas.map((area) => (
                 <tr key={area.id}>
                   <td><strong>{area.nombre}</strong><span>#{area.id}</span></td>
                   <td>{area.descripcion || 'Sin descripcion'}</td>
+                  <td>
+                    <span>
+                      {area.hora_inicio_venta ? String(area.hora_inicio_venta).slice(0, 5) : '07:00'} - {area.hora_fin_venta ? String(area.hora_fin_venta).slice(0, 5) : '17:00'}
+                    </span>
+                    <br />
+                    <small style={{ color: area.horario_activo ? '#16a34a' : '#64748b' }}>
+                      {area.horario_activo ? '🔒 Restringido' : '🔓 Libre'}
+                    </small>
+                  </td>
                   <td><span className={`user-status ${area.activo ? 'user-status--active' : ''}`}>{area.activo ? 'Activa' : 'Inactiva'}</span></td>
                   <td className="user-actions">
                     <button className="btn btn-ghost" type="button" onClick={() => openEditForm(area)}>Editar</button>
@@ -128,7 +147,7 @@ function AreaCrm() {
                   </td>
                 </tr>
               ))}
-              {filteredAreas.length === 0 && <tr><td className="users-empty" colSpan="4">No hay areas que coincidan con la busqueda.</td></tr>}
+              {filteredAreas.length === 0 && <tr><td className="users-empty" colSpan="5">No hay areas que coincidan con la busqueda.</td></tr>}
             </tbody>
           </table>
         </div>
@@ -143,7 +162,14 @@ function AreaCrm() {
             </div>
             <form className="login-form" onSubmit={handleSubmit}>
               <label><span>Nombre</span><input name="nombre" value={form.nombre} onChange={handleChange} required /></label>
-              <label><span>Descripcion</span><textarea name="descripcion" value={form.descripcion} onChange={handleChange} rows="4" /></label>
+              <label><span>Descripcion</span><textarea name="descripcion" value={form.descripcion} onChange={handleChange} rows="3" /></label>
+              
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <label><span>Hora inicio venta</span><input type="time" name="hora_inicio_venta" value={form.hora_inicio_venta} onChange={handleChange} /></label>
+                <label><span>Hora fin venta</span><input type="time" name="hora_fin_venta" value={form.hora_fin_venta} onChange={handleChange} /></label>
+              </div>
+
+              <label className="user-active-toggle"><input name="horario_activo" type="checkbox" checked={form.horario_activo} onChange={handleChange} /><span>Activar restriccion de horario de venta</span></label>
               <label className="user-active-toggle"><input name="activo" type="checkbox" checked={form.activo} onChange={handleChange} /><span>Area activa</span></label>
               <button className="btn btn-primary btn-block" type="submit" disabled={isSaving}>{isSaving ? 'Guardando...' : 'Guardar area'}</button>
             </form>

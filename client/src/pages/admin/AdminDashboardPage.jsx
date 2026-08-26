@@ -5,6 +5,7 @@ import Dashboard from '../../components/Dashboard'
 import UserCrm from './UserCrm'
 import ImageCrm from './ImageCrm'
 import AreaCrm from './AreaCrm'
+import SellingHoursCrm from './SellingHoursCrm'
 import RaffleTypeCrm from './RaffleTypeCrm'
 import SupervisorCrm from './SupervisorCrm'
 import RaffleCrm from './RaffleCrm'
@@ -82,6 +83,11 @@ function AdminDashboardPage({ onLogout }) {
           <>
             <Header title="Areas" subtitle="Organizacion territorial" />
             <AreaCrm />
+          </>
+        ) : section === 'horarios-venta' ? (
+          <>
+            <Header title="Horarios de venta" subtitle="Restriccion de horario por area" />
+            <SellingHoursCrm />
           </>
         ) : section === 'supervisores' ? (
           <>

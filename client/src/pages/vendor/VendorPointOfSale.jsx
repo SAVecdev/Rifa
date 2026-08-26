@@ -42,6 +42,7 @@ function VendorPointOfSale({ user, raffles = [], raffleTypes = [], onSaleComplet
 
   useEffect(() => {
     if (!error) return undefined
+    if (error.toLowerCase().includes('fuera de horario') || error.toLowerCase().includes('horario de venta')) return undefined
 
     const timeout = window.setTimeout(() => setError(''), 4500)
     return () => window.clearTimeout(timeout)

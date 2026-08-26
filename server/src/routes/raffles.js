@@ -2,6 +2,7 @@ import express from 'express'
 import { createRaffle, createSale, deleteRaffle, getRaffleById, getRaffles, updateRaffle } from '../services/raffleService.js'
 import { ensureSupabaseConfigured } from '../config/supabase.js'
 import { requireSessionOwner } from '../middleware/requireSession.js'
+import { checkVendorSellingSchedule } from '../services/sellingScheduleService.js'
 
 const router = express.Router()
 
@@ -77,9 +78,11 @@ router.delete('/:id', async (req, res) => {
 
 router.post('/:id/sales', ...requireSessionOwner((req) => req.body.id_usuario ?? req.body.userId), async (req, res) => {
   try {
+    const userId = req.body.id_usuario ?? req.body.userId
+    await checkVendorSellingSchedule(userId)
     const sale = await createSale({
       raffleId: req.params.id,
-      userId: req.body.id_usuario ?? req.body.userId,
+      userId,
       invoiceNumber: req.body.numero_factura ?? req.body.invoiceNumber,
       numbers: req.body.numbers,
       value: req.body.valor ?? req.body.value,

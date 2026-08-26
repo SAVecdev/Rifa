@@ -6,6 +6,9 @@ CREATE TABLE area (
     nombre varchar(255) NOT NULL,
     descripcion text,
     activo boolean NOT NULL DEFAULT true,
+    hora_inicio_venta time DEFAULT '07:00:00',
+    hora_fin_venta time DEFAULT '17:00:00',
+    horario_activo boolean NOT NULL DEFAULT false,
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now()
 );

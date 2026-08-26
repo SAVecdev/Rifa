@@ -13,6 +13,7 @@ import {
 } from '../services/localSaleService.js'
 import { refreshWinnerCache } from '../services/winnerCache.js'
 import { requireSessionOwner } from '../middleware/requireSession.js'
+import { checkVendorSellingSchedule } from '../services/sellingScheduleService.js'
 
 const router = express.Router()
 
@@ -34,9 +35,11 @@ const callRpcWithRetry = async (supabase, payload, requestLabel) => {
   return { data: null, error: lastError }
 }
 
-router.post('/windows', ...requireSessionOwner((req) => req.body?.id_usuario ?? req.body?.userId), (req, res) => {
+router.post('/windows', ...requireSessionOwner((req) => req.body?.id_usuario ?? req.body?.userId), async (req, res) => {
   try {
-    const invoice = openSaleWindow(req.body?.id_usuario ?? req.body?.userId)
+    const userId = req.body?.id_usuario ?? req.body?.userId
+    await checkVendorSellingSchedule(userId)
+    const invoice = openSaleWindow(userId)
     return res.status(201).json(invoice)
   } catch (error) {
     return res.status(400).json({ message: error.message })
@@ -74,6 +77,7 @@ router.post('/windows/:userId/:invoiceNumber/pay', ...requireSessionOwner((req) 
   let paymentStarted = false
 
   try {
+    await checkVendorSellingSchedule(req.params.userId)
     const startedAt = Date.now()
     invoice = getPendingInvoice(req.params.userId, req.params.invoiceNumber)
     invoice = beginPayment(req.params.userId, req.params.invoiceNumber)
