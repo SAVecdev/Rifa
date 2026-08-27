@@ -1,5 +1,6 @@
 import express from 'express'
 import { ensureSupabaseConfigured } from '../config/supabase.js'
+import { syncAutoRaffles } from '../services/autoRaffleService.js'
 
 const router = express.Router()
 const cacheTtl = 5 * 60 * 1000
@@ -41,9 +42,28 @@ router.get('/:id', async (req, res) => {
   }
 })
 
+router.post('/auto-generate', async (req, res) => {
+  try {
+    const result = await syncAutoRaffles()
+    clearRaffleTypesCache()
+    return res.json({ ok: true, ...result })
+  } catch (error) {
+    return res.status(500).json({ message: error.message })
+  }
+})
+
 router.post('/', async (req, res) => {
   try {
-    const { nombre, descripcion = null, color_primario, color_secundario } = req.body || {}
+    const {
+      nombre,
+      descripcion = null,
+      color_primario,
+      color_secundario,
+      dias_creacion_auto,
+      hora_juego_auto,
+      auto_creacion_activa,
+      sorteos_auto,
+    } = req.body || {}
 
     if (!nombre) {
       return res.status(400).json({ message: 'nombre es obligatorio' })
@@ -54,11 +74,16 @@ router.post('/', async (req, res) => {
 
     if (color_primario !== undefined) payload.color_primario = color_primario
     if (color_secundario !== undefined) payload.color_secundario = color_secundario
+    if (dias_creacion_auto !== undefined) payload.dias_creacion_auto = Array.isArray(dias_creacion_auto) ? dias_creacion_auto : []
+    if (hora_juego_auto !== undefined) payload.hora_juego_auto = hora_juego_auto
+    if (auto_creacion_activa !== undefined) payload.auto_creacion_activa = Boolean(auto_creacion_activa)
+    if (sorteos_auto !== undefined) payload.sorteos_auto = Number(sorteos_auto) || 1
 
     const { data, error } = await supabase.from('tipo_rifa').insert(payload).select().single()
 
     if (error) throw new Error(error.message)
     clearRaffleTypesCache()
+    void syncAutoRaffles().catch(() => {})
     return res.status(201).json(data)
   } catch (error) {
     return res.status(400).json({ message: error.message })
@@ -67,13 +92,26 @@ router.post('/', async (req, res) => {
 
 router.patch('/:id', async (req, res) => {
   try {
-    const { nombre, descripcion, color_primario, color_secundario } = req.body || {}
+    const {
+      nombre,
+      descripcion,
+      color_primario,
+      color_secundario,
+      dias_creacion_auto,
+      hora_juego_auto,
+      auto_creacion_activa,
+      sorteos_auto,
+    } = req.body || {}
     const payload = {}
 
     if (nombre !== undefined) payload.nombre = nombre
     if (descripcion !== undefined) payload.descripcion = descripcion
     if (color_primario !== undefined) payload.color_primario = color_primario
     if (color_secundario !== undefined) payload.color_secundario = color_secundario
+    if (dias_creacion_auto !== undefined) payload.dias_creacion_auto = Array.isArray(dias_creacion_auto) ? dias_creacion_auto : []
+    if (hora_juego_auto !== undefined) payload.hora_juego_auto = hora_juego_auto
+    if (auto_creacion_activa !== undefined) payload.auto_creacion_activa = Boolean(auto_creacion_activa)
+    if (sorteos_auto !== undefined) payload.sorteos_auto = Number(sorteos_auto) || 1
 
     if (Object.keys(payload).length === 0) {
       return res.status(400).json({ message: 'Envia al menos un campo para actualizar' })
@@ -86,6 +124,7 @@ router.patch('/:id', async (req, res) => {
     if (!data) return res.status(404).json({ message: 'Tipo de rifa no encontrado' })
 
     clearRaffleTypesCache()
+    void syncAutoRaffles().catch(() => {})
     return res.json(data)
   } catch (error) {
     return res.status(400).json({ message: error.message })

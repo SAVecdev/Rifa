@@ -1452,6 +1452,13 @@
   gap: 5px;
   padding: 4mm;
   text-align: center;
+  box-sizing: border-box;
+}
+
+.invoice-receipt,
+.invoice-receipt * {
+  font-family: inherit;
+  color: inherit;
 }
 
 .invoice-receipt-header {
@@ -1579,21 +1586,60 @@
   margin-top: 14px;
 }
 
+@page {
+  size: 80mm auto;
+  margin: 0;
+}
+
 @media print {
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+  }
+
+  html, body {
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 80mm !important;
+    height: auto !important;
+    overflow: visible !important;
+    background: #ffffff !important;
+  }
+
   body * {
-    visibility: hidden;
+    visibility: hidden !important;
+  }
+
+  .invoice-receipt-overlay,
+  .invoice-receipt-modal {
+    position: static !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
   }
 
   .invoice-receipt,
   .invoice-receipt * {
-    visibility: visible;
+    visibility: visible !important;
   }
 
   .invoice-receipt {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 80mm;
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 80mm !important;
+    margin: 0 !important;
+    padding: 2mm 4mm !important;
+    box-sizing: border-box !important;
+    page-break-after: avoid !important;
+    break-after: avoid !important;
+    page-break-before: avoid !important;
+    break-before: avoid !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
   }
 
   .no-print {

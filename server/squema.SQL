@@ -43,6 +43,10 @@ CREATE TABLE tipo_rifa (
     -- vamos a agregar 2 campos para definir los colores para personalizar la plataforma de rifas
     color_primario varchar(7) NOT NULL DEFAULT '#000000', -- Color en formato hexadecimal
     color_secundario varchar(7) NOT NULL DEFAULT '#FFFFFF', -- Color en formato hexadecimal
+    dias_creacion_auto jsonb NOT NULL DEFAULT '[]'::jsonb,
+    hora_juego_auto time DEFAULT '18:00:00',
+    auto_creacion_activa boolean NOT NULL DEFAULT false,
+    sorteos_auto integer NOT NULL DEFAULT 1,
     created_at timestamptz NOT NULL DEFAULT now()
 );
 

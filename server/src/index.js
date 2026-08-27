@@ -24,6 +24,7 @@ import reportsRoutes from './routes/reports.js'
 import raffleTypeAreasRoutes from './routes/raffleTypeAreas.js'
 import { createResourceRouter } from './routes/resourceRoutes.js'
 import { ensureSupabaseConfigured } from './config/supabase.js'
+import { startAutoRaffleScheduler } from './services/autoRaffleService.js'
 
 dotenv.config()
 
@@ -83,6 +84,7 @@ app.use('/api/raffle-logos', raffleLogosRoutes)
 const startServer = async () => {
   try {
     ensureSupabaseConfigured()
+    startAutoRaffleScheduler()
     app.listen(PORT, () => {
       console.log(`Servidor escuchando en http://localhost:${PORT}`)
     })

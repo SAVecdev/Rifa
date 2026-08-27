@@ -109,7 +109,7 @@ function InvoiceSettingsCrm() {
     clasica: <><strong>Factura A001</strong><span>Rifa de ejemplo · Numero 56</span><span>X2 $0.25 = $0.50</span>{previewPrizeTable()}</>,
     compacta: <><div className="invoice-line"><span>Rifa de ejemplo #56</span><strong>X2 $0.25 = $0.50</strong></div><div className="invoice-line"><span>Rifa de ejemplo #37</span><strong>X1 $0.25 = $0.25</strong></div>{previewPrizeTable(true)}</>,
     agrupada: <><div className="invoice-group"><strong>Rifa de ejemplo · X3 $0.25 = $0.75</strong><span>56, 37, 82</span>{previewPrizeTable(true)}</div></>,
-    resumen: <><strong>Premios activos</strong><div className="invoice-active-prizes">{visibleLevels.slice(0, 5).map((level) => <span key={level}>P{level}: $0.00</span>)}</div><span>2 numeros · 2 apuestas</span></>,
+    resumen: <><strong>Premios activos</strong>{previewPrizeTable(true)}<span>2 numeros · 2 apuestas</span></>,
   }
 
   return (

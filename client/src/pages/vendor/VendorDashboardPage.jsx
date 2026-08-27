@@ -101,8 +101,10 @@ function VendorInvoiceHistory({ user, playedOnly = false }) {
   }, [])
 
   const openPrint = async () => {
+    if (!selectedInvoice) return
     try {
-      const invoiceSettings = await request(`/api/invoice-settings/${user.id}`).catch(() => null)
+      const targetUserId = selectedInvoice.id_usuario || user.id
+      const invoiceSettings = await request(`/api/invoice-settings/${targetUserId}`).catch(() => null)
       setSettings(invoiceSettings)
       setPrintInvoice(selectedInvoice)
       setSelectedInvoice(null)
@@ -192,7 +194,7 @@ function VendorInvoiceHistory({ user, playedOnly = false }) {
       {isLoadingDetail ? <VendorDashboardSkeleton section="sales-only" /> : <InvoiceDetailView invoice={selectedInvoice} onPayNumber={payNumberPrize} onPayAll={payAllPrizes} payingId={payingId} formatMoney={formatMoney} maskInvoiceNumber maskInvoiceId={false} />}
       <div className="invoice-receipt-actions"><button className="btn btn-primary" type="button" onClick={openPrint}>Reimprimir factura</button><button className="btn btn-danger" type="button" disabled={isRaffleFinished(selectedInvoice)} title={isRaffleFinished(selectedInvoice) ? 'La rifa ya se jugo, no se puede eliminar la factura' : undefined} onClick={deleteInvoice}>{isRaffleFinished(selectedInvoice) && '🔒 '}Eliminar factura</button><button className="btn btn-ghost" type="button" onClick={() => setSelectedInvoice(null)}>Cerrar</button></div>
     </div></div>}
-    {printInvoice && <InvoiceReceiptModal invoice={printInvoice} settings={settings} onClose={() => setPrintInvoice(null)} />}
+    {printInvoice && <InvoiceReceiptModal key={`${printInvoice.id}-${settings?.modelo_factura || 'clasica'}`} invoice={printInvoice} settings={settings} onClose={() => setPrintInvoice(null)} />}
   </section>
 }
 

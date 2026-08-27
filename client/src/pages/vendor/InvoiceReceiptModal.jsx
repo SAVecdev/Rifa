@@ -27,13 +27,18 @@ const maskValue = (value) => {
   return `${text.slice(0, 1)}${'*'.repeat(text.length - 2)}${text.slice(-1)}`
 }
 
-const withSeparators = (items) => items.flatMap((item, index) => index === 0 ? [item] : [<hr key={`sep-${item.key}`} />, item])
+const withSeparators = (items) => items.flatMap((item, index) => index === 0 ? [item] : [<hr key={`sep-${index}`} />, item])
 
 function InvoiceReceiptModal({ invoice, settings, onDelete, onClose, isOriginal = false }) {
   const [isReprinting, setIsReprinting] = useState(false)
   const config = { ...defaultSettings, ...(settings || {}) }
   const visibleInvoiceNumber = !isOriginal ? maskValue(invoice.numero_factura) : invoice.numero_factura
-  const visibleLevels = config.mostrar_premios ? config.orden_premios : []
+  const rawLevels = config.mostrar_premios ? config.orden_premios : []
+  const visibleLevels = Array.isArray(rawLevels)
+    ? rawLevels
+    : typeof rawLevels === 'string'
+      ? (() => { try { return JSON.parse(rawLevels) } catch { return [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] } })()
+      : [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
   const logoUrl = invoice.logo_ruta?.startsWith('http') ? invoice.logo_ruta : invoice.logo_ruta ? `${apiUrl}${invoice.logo_ruta}` : null
   const groupedSales = invoice.ventas.reduce((groups, sale) => {
     const key = `${sale.rifa?.nombre || 'Rifa'}:${sale.valor}`
@@ -42,6 +47,14 @@ function InvoiceReceiptModal({ invoice, settings, onDelete, onClose, isOriginal 
     group.numeros.push(sale.numero)
     group.cantidad += sale.cantidad
     group.total += Number(sale.total)
+    return groups
+  }, new Map())
+
+  // Agrupar ventas por valor (saldo de apuesta) y cantidad de digitos para mostrar cuadros de premios adecuados
+  const prizeGroupedSales = invoice.ventas.reduce((groups, sale) => {
+    const digits = String(sale.numero || '').trim().length
+    const key = `${sale.valor}:${digits}:${sale.rifa?.id_tipo || sale.rifa?.id || ''}`
+    if (!groups.has(key)) groups.set(key, sale)
     return groups
   }, new Map())
 
@@ -63,16 +76,96 @@ function InvoiceReceiptModal({ invoice, settings, onDelete, onClose, isOriginal 
     </>
   )
 
-  const prizeTable = (sale) => visibleLevels.length > 0 && <table><tbody>{Array.from({ length: Math.ceil(visibleLevels.length / 2) }, (_, rowIndex) => <tr key={rowIndex}>{visibleLevels.slice(rowIndex * 2, rowIndex * 2 + 2).flatMap((level) => [<td key={`label-${level}`}>{level}er.</td>, <td key={`value-${level}`}>{formatMoney(sale[`premio_${String(level).padStart(2, '0')}`])}</td>])}</tr>)}</tbody></table>
-  const activePrizes = (sale) => <div className="invoice-active-prizes">{visibleLevels.filter((level) => Number(sale[`premio_${String(level).padStart(2, '0')}`]) > 0).map((level) => <span key={level}>Premio {level}: {formatMoney(sale[`premio_${String(level).padStart(2, '0')}`])}</span>)}</div>
+  const prizeTable = (sale, compact = false) => {
+    if (visibleLevels.length === 0) return null
+    const targetSale = sale || invoice.ventas[0] || {}
+    const rows = Math.ceil(visibleLevels.length / 2)
+    return (
+      <table>
+        <tbody>
+          {Array.from({ length: rows }, (_, rowIndex) => (
+            <tr key={rowIndex}>
+              {visibleLevels.slice(rowIndex * 2, rowIndex * 2 + 2).flatMap((level) => {
+                const prizeVal = targetSale[`premio_${String(level).padStart(2, '0')}`]
+                return [
+                  <td key={`label-${level}`}>{compact ? `P${level}` : `${level}er.`}</td>,
+                  <td key={`value-${level}`}>{formatMoney(prizeVal || 0)}</td>,
+                ]
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    )
+  }
   const quantityLine = (sale) => <>X{sale.cantidad} {formatMoney(sale.valor)} = {formatMoney(sale.total)}</>
 
-  const content = {
-    clasica: withSeparators(invoice.ventas.map((sale) => <section key={sale.id} className="invoice-receipt-sale"><strong>{sale.rifa?.nombre || 'Rifa'} · #{sale.numero}</strong><span>{quantityLine(sale)}</span>{prizeTable(sale)}</section>)),
-    compacta: withSeparators(invoice.ventas.map((sale) => <div key={sale.id} className="invoice-line"><span>{sale.rifa?.nombre || 'Rifa'} #{sale.numero}</span><strong>{quantityLine(sale)}</strong>{activePrizes(sale)}</div>)),
-    resumen: withSeparators(invoice.ventas.map((sale) => <section key={sale.id} className="invoice-receipt-sale"><strong>#{sale.numero} · {quantityLine(sale)}</strong>{activePrizes(sale)}</section>)),
-    agrupada: withSeparators([...groupedSales.values()].map((sale) => <div key={`${sale.rifa?.nombre}:${sale.valor}`} className="invoice-group"><strong>{sale.rifa?.nombre || 'Rifa'} · {quantityLine(sale)}</strong><span>{sale.numeros.join(', ')}</span>{activePrizes(sale)}</div>)),
-  }[config.modelo_factura] || []
+  const modelKey = String(config.modelo_factura || 'clasica').trim().toLowerCase()
+  const contentMap = {
+    clasica: (
+      <div className="invoice-model-clasica">
+        {withSeparators(invoice.ventas.map((sale) => (
+          <section key={sale.id} className="invoice-receipt-sale">
+            <strong>{sale.rifa?.nombre || 'Rifa'} · #{sale.numero}</strong>
+            <span>{quantityLine(sale)}</span>
+            {prizeTable(sale, false)}
+          </section>
+        )))}
+      </div>
+    ),
+    compacta: (
+      <div className="invoice-model-compacta">
+        {invoice.ventas.map((sale) => (
+          <div key={sale.id} className="invoice-line">
+            <span>{sale.rifa?.nombre || 'Rifa'} #{sale.numero}</span>
+            <strong>{quantityLine(sale)}</strong>
+          </div>
+        ))}
+        <hr />
+        {[...prizeGroupedSales.values()].map((sampleSale, idx) => (
+          <div key={idx} style={{ marginTop: idx > 0 ? '4px' : '0' }}>
+            {prizeGroupedSales.size > 1 && (
+              <small style={{ display: 'block', fontSize: '0.75em', fontWeight: 'bold', textAlign: 'center' }}>
+                Premios para apuesta de {formatMoney(sampleSale.valor)} ({String(sampleSale.numero || '').trim().length} digitos):
+              </small>
+            )}
+            {prizeTable(sampleSale, true)}
+          </div>
+        ))}
+      </div>
+    ),
+    agrupada: (
+      <div className="invoice-model-agrupada">
+        {withSeparators([...groupedSales.values()].map((group, idx) => (
+          <div key={idx} className="invoice-group">
+            <strong>{group.rifa?.nombre || 'Rifa'} · {quantityLine(group)}</strong>
+            <span>{group.numeros.join(', ')}</span>
+            {prizeTable(group, true)}
+          </div>
+        )))}
+      </div>
+    ),
+    resumen: (
+      <div className="invoice-model-resumen">
+        <section className="invoice-receipt-sale">
+          <strong>Premios activos</strong>
+          {[...prizeGroupedSales.values()].map((sampleSale, idx) => (
+            <div key={idx} style={{ marginTop: idx > 0 ? '4px' : '0' }}>
+              {prizeGroupedSales.size > 1 && (
+                <small style={{ display: 'block', fontSize: '0.75em', fontWeight: 'bold', textAlign: 'center' }}>
+                  Apuesta {formatMoney(sampleSale.valor)} ({String(sampleSale.numero || '').trim().length} digitos):
+                </small>
+              )}
+              {prizeTable(sampleSale, true)}
+            </div>
+          ))}
+        </section>
+        <hr />
+        <span>{invoice.ventas.reduce((sum, s) => sum + Number(s.cantidad || 1), 0)} numeros · {invoice.ventas.length} apuestas</span>
+      </div>
+    ),
+  }
+  const content = contentMap[modelKey] || contentMap.clasica
 
   useEffect(() => {
     if (!isReprinting) return undefined

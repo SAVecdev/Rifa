@@ -2,9 +2,26 @@ import express from 'express'
 import { ensureSupabaseConfigured } from '../config/supabase.js'
 
 const router = express.Router()
-const settingsCacheTtl = 2 * 60 * 60 * 1000
+const settingsCacheTtl = 60 * 1000
 const settingsCache = new Map()
 const settingsLoading = new Map()
+
+const defaultSettings = {
+  nombre_empresa: 'Rifa POS',
+  identificacion_empresa: '',
+  telefono_empresa: '',
+  direccion_empresa: '',
+  mensaje_encabezado: 'Gracias por participar',
+  mensaje_pie: 'Conserve esta factura',
+  tipo_letra: 'Arial',
+  tamano_letra: 12,
+  color_primario: '#000000',
+  color_secundario: '#FFFFFF',
+  modelo_factura: 'clasica',
+  mostrar_logo: true,
+  mostrar_premios: true,
+  orden_premios: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+}
 
 const allowedFields = [
   'nombre_empresa',
@@ -66,7 +83,7 @@ router.get('/:userId', async (req, res) => {
         const startedAt = Date.now()
         const { data, error } = await supabase.from('configuracion_factura').select('*').eq('id_usuario', userId).maybeSingle()
         if (error && error.code !== 'PGRST116') throw new Error(error.message)
-        const value = data || null
+        const value = data ? { ...defaultSettings, ...data } : defaultSettings
         settingsCache.set(userId, { data: value, expiresAt: Date.now() + settingsCacheTtl })
         console.log(`[INVOICE-SETTINGS] Consulta Supabase usuario ${userId} ${Date.now() - startedAt}ms`)
         return value
@@ -93,8 +110,9 @@ router.put('/:userId', async (req, res) => {
       .single()
 
     if (error) throw new Error(error.message)
-    settingsCache.set(userId, { data, expiresAt: Date.now() + settingsCacheTtl })
-    return res.json(data)
+    const merged = { ...defaultSettings, ...data }
+    settingsCache.set(userId, { data: merged, expiresAt: Date.now() + settingsCacheTtl })
+    return res.json(merged)
   } catch (error) {
     return res.status(400).json({ message: error.message })
   }

@@ -106,9 +106,10 @@ function VendorPointOfSale({ user, raffles = [], raffleTypes = [], onSaleComplet
 
   const handleChange = (event) => {
     const { name, value } = event.target
+    const newValue = name === 'number' ? value.replace(/\D/g, '') : value
     setForm((currentForm) => ({
       ...currentForm,
-      [name]: value,
+      [name]: newValue,
       ...(name === 'saleDate' ? { raffleId: '', number: '' } : {}),
     }))
     if (name === 'saleDate') setUnavailableNumbers([])
@@ -139,6 +140,7 @@ function VendorPointOfSale({ user, raffles = [], raffleTypes = [], onSaleComplet
       const number = form.number.trim()
       if (!selectedRaffle) throw new Error('Selecciona una rifa')
       if (!number) throw new Error('Ingresa un numero')
+      if (!/^\d+$/.test(number)) throw new Error('El numero solo debe contener digitos numericos (0-9)')
       if (unavailableNumbers.includes(number)) throw new Error('Este numero ya no esta disponible')
       const quantity = Number(form.quantity)
       if (!Number.isInteger(quantity) || quantity < 1) throw new Error('La cantidad debe ser un numero entero mayor o igual a 1')
@@ -239,10 +241,14 @@ function VendorPointOfSale({ user, raffles = [], raffleTypes = [], onSaleComplet
           rifa: raffles.find((raffle) => raffle.id === sale.id_rifa) || null,
         })),
       }
-      setPrintedInvoice(fastInvoice)
-      request(`/api/invoices/${payment.id_factura}`)
-        .then((detailedInvoice) => setPrintedInvoice(detailedInvoice))
-        .catch(() => {})
+      let finalInvoice = fastInvoice
+      try {
+        const detailedInvoice = await request(`/api/invoices/${payment.id_factura}`)
+        if (detailedInvoice && detailedInvoice.id) finalInvoice = detailedInvoice
+      } catch {
+        // Fallback to fastInvoice
+      }
+      setPrintedInvoice(finalInvoice)
       const settings = await request(`/api/invoice-settings/${user.id}`).catch(() => invoiceSettings)
       setInvoiceSettings(settings)
       await openWindow()
@@ -281,7 +287,7 @@ function VendorPointOfSale({ user, raffles = [], raffleTypes = [], onSaleComplet
           <label className="pos-date-field" onClick={openDatePicker}><span>Fecha</span><input ref={dateInputRef} name="saleDate" type="date" value={form.saleDate} onChange={handleChange} disabled={isSaving} required /></label>
           <label><span>Rifa</span><select name="raffleId" value={form.raffleId} onChange={handleChange} disabled={isSaving}><option value="">Selecciona una rifa</option>{rafflesForSelectedDate.map((raffle) => <option key={raffle.id} value={raffle.id}>{raffle.nombre}</option>)}</select></label>
           {rafflesForSelectedDate.length === 0 && <p className="pos-date-helper">No hay rifas disponibles para la fecha seleccionada.</p>}
-          <label><span>Numero</span><input ref={numberInputRef} name="number" value={form.number} onChange={handleChange} onKeyDown={handleNumberKeyDown} placeholder="Ingresa numero" disabled={isSaving} /></label>
+          <label><span>Numero</span><input ref={numberInputRef} name="number" type="text" inputMode="numeric" pattern="[0-9]*" value={form.number} onChange={handleChange} onKeyDown={handleNumberKeyDown} placeholder="Ingresa numero" disabled={isSaving} /></label>
           <label><span>Valor</span><input name="value" type="number" min="0" step="0.01" value={form.value} onChange={handleChange} disabled={isSaving} /></label>
           <div className="pos-value-presets">{presetValues.map((value) => <button key={value} type="button" className={Number(form.value) === value ? 'active' : ''} onClick={() => setForm((currentForm) => ({ ...currentForm, value: String(value) }))}>{value.toFixed(2)}</button>)}</div>
           <label><span>Cantidad</span><input name="quantity" type="number" min="1" step="1" value={form.quantity} onChange={handleChange} disabled={isSaving} /></label>
